@@ -1,0 +1,98 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 210 20% 98%;
+    --foreground: 220 15% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 15% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 15% 15%;
+
+    --primary: 210 15% 25%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 210 20% 92%;
+    --secondary-foreground: 220 15% 15%;
+
+    --muted: 210 20% 92%;
+    --muted-foreground: 220 10% 45%;
+
+    --accent: 200 20% 65%;
+    --accent-foreground: 220 15% 15%;
+
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 15% 88%;
+    --input: 220 15% 88%;
+    --ring: 210 15% 35%;
+
+    --radius: 1rem;
+
+    /* Glacier aesthetic tokens */
+    --glass-bg: 210 25% 95%;
+    --glass-border: 220 15% 85%;
+    --ice-glow: 200 25% 75%;
+    --gradient-glass: linear-gradient(135deg, hsl(210 25% 96% / 0.8), hsl(200 20% 94% / 0.8));
+    --gradient-frost: linear-gradient(180deg, hsl(210 25% 98% / 0.5), hsl(200 20% 96% / 0.3));
+    --glow-ice: 0 0 30px hsl(200 25% 75% / 0.2);
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .dark {
+    --background: 220 20% 8%;
+    --foreground: 210 20% 92%;
+
+    --card: 220 18% 12%;
+    --card-foreground: 210 20% 92%;
+
+    --popover: 220 18% 12%;
+    --popover-foreground: 210 20% 92%;
+
+    --primary: 210 15% 75%;
+    --primary-foreground: 220 20% 10%;
+
+    --secondary: 220 18% 16%;
+    --secondary-foreground: 210 20% 88%;
+
+    --muted: 220 18% 16%;
+    --muted-foreground: 220 10% 55%;
+
+    --accent: 200 15% 45%;
+    --accent-foreground: 210 20% 92%;
+
+    --destructive: 0 60% 45%;
+    --destructive-foreground: 210 20% 92%;
+
+    --border: 220 15% 20%;
+    --input: 220 15% 20%;
+    --ring: 210 15% 60%;
+
+    /* Dark glacier aesthetic */
+    --glass-bg: 220 20% 14%;
+    --glass-border: 220 15% 22%;
+    --ice-glow: 200 20% 40%;
+    --gradient-glass: linear-gradient(135deg, hsl(220 20% 16% / 0.8), hsl(210 18% 14% / 0.8));
+    --gradient-frost: linear-gradient(180deg, hsl(220 20% 18% / 0.5), hsl(210 18% 14% / 0.3));
+    --glow-ice: 0 0 40px hsl(200 20% 40% / 0.3);
+  }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}

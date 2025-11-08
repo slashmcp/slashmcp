@@ -1,0 +1,544 @@
+import React, { useState, useRef, useEffect, useCallback, memo } from "react";
+import { Plus, ArrowUp } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  registerUploadJob,
+  triggerTextractJob,
+  triggerVisionJob,
+  fetchJobStatus,
+  type AnalysisTarget,
+} from "@/lib/api";
+import { useToast } from "@/components/ui/use-toast";
+
+type MenuOption =
+  | "Upload Files"
+  | "Document Analysis"
+  | "Image OCR"
+  | "Voice Assistant";
+
+type JobStatus = "uploading" | "queued" | "processing" | "completed" | "failed";
+
+interface UploadJob {
+  id: string;
+  fileName: string;
+  status: JobStatus;
+  message?: string | null;
+  error?: string | null;
+  resultText?: string | null;
+  updatedAt?: string;
+  visionSummary?: string | null;
+  visionProvider?: "gpt4o" | "gemini" | null;
+  visionMetadata?: Record<string, unknown> | null;
+}
+
+interface ChatInputProps {
+  placeholder?: string;
+  onSubmit?: (value: string) => void;
+  disabled?: boolean;
+  className?: string;
+}
+
+interface OptionTagProps {
+  option: MenuOption;
+  onRemove: (option: MenuOption) => void;
+}
+
+const OptionTag = memo(({ option, onRemove }: OptionTagProps) => (
+  <div className="flex items-center gap-1 bg-muted/50 px-2 py-1 rounded-md text-xs text-foreground/80 backdrop-blur-sm border border-border/50">
+    <span>{option}</span>
+    <button
+      type="button"
+      onClick={() => onRemove(option)}
+      className="h-4 w-4 flex items-center justify-center rounded-full hover:bg-muted text-foreground/60 hover:text-foreground transition-colors"
+    >
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+        <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
+  </div>
+));
+
+const OptionsMenu = memo(({
+  isOpen,
+  onSelect,
+  options,
+  placement = "bottom",
+}: {
+  isOpen: boolean;
+  onSelect: (option: MenuOption) => void;
+  options: MenuOption[];
+  placement?: "top" | "bottom";
+}) => {
+  if (!isOpen) return null;
+
+  return (
+    <div
+      className={cn(
+        "absolute left-0 bg-card/95 backdrop-blur-xl rounded-lg shadow-lg border border-border/50 overflow-hidden z-[60] min-w-[140px]",
+        placement === "bottom" ? "top-full mt-1" : "bottom-full mb-1"
+      )}
+    >
+      <ul className="py-1">
+        {options.map((option) => (
+          <li
+            key={option}
+            className="px-4 py-2 hover:bg-muted cursor-pointer text-sm font-medium text-foreground transition-colors"
+            onClick={() => onSelect(option)}
+          >
+            {option}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+});
+
+export function ChatInput({
+  placeholder = "Ask anything...",
+  onSubmit = (value: string) => console.log("Submitted:", value),
+  disabled = false,
+  className,
+}: ChatInputProps) {
+  const { toast } = useToast();
+  const [value, setValue] = useState("");
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [selectedOptions, setSelectedOptions] = useState<MenuOption[]>([]);
+  const [analysisTarget, setAnalysisTarget] = useState<AnalysisTarget>("document-analysis");
+  const [jobs, setJobs] = useState<UploadJob[]>([]);
+  const [isRegisteringUpload, setIsRegisteringUpload] = useState(false);
+  const [visionProvider, setVisionProvider] = useState<"gpt4o" | "gemini">("gpt4o");
+  const updateJob = useCallback(
+    (jobId: string, updates: Partial<UploadJob>) => {
+      setJobs((prev) =>
+        prev.map((job) => (job.id === jobId ? { ...job, ...updates } : job)),
+      );
+    },
+    [],
+  );
+
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const dropdownPlacement: "top" | "bottom" = jobs.length > 0 ? "top" : "bottom";
+
+  const menuOptions: MenuOption[] = [
+    "Upload Files",
+    "Document Analysis",
+    "Image OCR",
+    "Voice Assistant",
+  ];
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      const scrollHeight = textareaRef.current.scrollHeight;
+      const maxHeight = 96; // max-h-24 = 96px
+      textareaRef.current.style.height = Math.min(scrollHeight, maxHeight) + "px";
+    }
+  }, [value]);
+
+  const handleSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      if (value.trim() && !disabled) {
+        onSubmit(value.trim());
+        setValue("");
+        setSelectedOptions([]);
+      }
+    },
+    [value, onSubmit, disabled]
+  );
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        handleSubmit(e as any);
+      }
+    },
+    [handleSubmit]
+  );
+
+  const selectOption = useCallback(
+    (option: MenuOption) => {
+      setSelectedOptions(prev => {
+        if (!prev.includes(option)) {
+          return [...prev, option];
+        }
+        return prev;
+      });
+
+      if (option === "Upload Files") {
+        fileInputRef.current?.click();
+      } else if (option === "Document Analysis") {
+        setAnalysisTarget("document-analysis");
+      } else if (option === "Image OCR") {
+        setAnalysisTarget("image-ocr");
+      } else if (option === "Voice Assistant") {
+        setAnalysisTarget("audio-transcription");
+      }
+
+      setIsMenuOpen(false);
+    },
+    [],
+  );
+
+  const removeOption = useCallback((option: MenuOption) => {
+    setSelectedOptions(prev => prev.filter(opt => opt !== option));
+  }, []);
+
+  const triggerVision = useCallback(
+    async (jobId: string) => {
+      try {
+        await triggerVisionJob({ jobId, provider: visionProvider });
+        const statusResponse = await fetchJobStatus(jobId);
+        const providerUsed = statusResponse.result?.vision_provider as "gpt4o" | "gemini" | null;
+        updateJob(jobId, {
+          visionSummary: statusResponse.result?.vision_summary ?? null,
+          visionMetadata: statusResponse.result?.vision_metadata ?? null,
+          visionProvider: providerUsed,
+          updatedAt: statusResponse.job.updated_at,
+        });
+        return providerUsed;
+      } catch (error) {
+        throw error;
+      }
+    },
+    [visionProvider, updateJob],
+  );
+
+  const handleFileUpload = useCallback(
+    async (file: File) => {
+      try {
+        setIsRegisteringUpload(true);
+        const response = await registerUploadJob({
+          file,
+          analysisTarget,
+          metadata: { source: "chat-input" },
+        });
+
+        setJobs(prev => [
+          ...prev,
+          {
+            id: response.jobId,
+            fileName: file.name,
+            status: response.uploadUrl ? "uploading" : "queued",
+            message: response.message ?? null,
+            error: null,
+          },
+        ]);
+
+        if (!response.uploadUrl) {
+          toast({
+            title: "Upload registered",
+            description: "Pre-signed upload URL not available. Upload manually when available.",
+          });
+        }
+
+        if (response.uploadUrl) {
+          const uploadResp = await fetch(response.uploadUrl, {
+            method: "PUT",
+            headers: {
+              "Content-Type": file.type || "application/octet-stream",
+            },
+            body: file,
+          });
+
+          if (!uploadResp.ok) {
+            updateJob(response.jobId, { status: "failed", error: "Failed to upload to storage" });
+            throw new Error("Upload to storage failed");
+          }
+
+          updateJob(response.jobId, { status: "processing", error: null });
+
+          let visionSucceeded = false;
+          let visionProviderUsed: "gpt4o" | "gemini" | null = null;
+          let visionError: string | null = null;
+
+          try {
+            visionProviderUsed = await triggerVision(response.jobId);
+            visionSucceeded = true;
+          } catch (error) {
+            visionError = error instanceof Error ? error.message : "Vision analysis failed";
+            console.error("Vision analysis failed", error);
+            updateJob(response.jobId, {
+              status: "processing",
+              error: visionError,
+            });
+            toast({
+              title: "Vision analysis failed",
+              description: visionError,
+              variant: "destructive",
+            });
+          }
+
+          const shouldRunOCR =
+            analysisTarget === "document-analysis" || analysisTarget === "image-ocr";
+          let ocrSucceeded = false;
+
+          if (shouldRunOCR) {
+            try {
+              await triggerTextractJob(response.jobId);
+              const statusResponse = await fetchJobStatus(response.jobId);
+              const jobStatus = statusResponse.job.status as JobStatus;
+              const normalizedStatus =
+                jobStatus === "failed" && visionSucceeded ? "completed" : jobStatus;
+
+              updateJob(response.jobId, {
+                status: normalizedStatus,
+                resultText: statusResponse.result?.ocr_text ?? null,
+                updatedAt: statusResponse.job.updated_at,
+              });
+
+              if (!statusResponse.result?.ocr_text) {
+                updateJob(response.jobId, {
+                  error: "No text detected",
+                });
+              } else {
+                ocrSucceeded = true;
+              }
+            } catch (texError) {
+              const message =
+                texError instanceof Error ? texError.message : "Textract processing failed";
+              console.error("Textract worker failed", texError);
+              updateJob(response.jobId, {
+                status: visionSucceeded ? "completed" : "failed",
+                error: message,
+              });
+              if (!visionSucceeded) {
+                toast({
+                  title: "Processing failed",
+                  description: message,
+                  variant: "destructive",
+                });
+                return;
+              }
+            }
+          }
+
+          if (visionSucceeded) {
+            toast({
+              title: "Vision analysis ready",
+              description: `${file.name} analyzed with ${visionProviderUsed ?? "vision model"}.`,
+            });
+            updateJob(response.jobId, { status: "completed", error: null });
+          } else if (ocrSucceeded) {
+            toast({
+              title: "Text extracted",
+              description: `${file.name} processed with OCR.`,
+            });
+            updateJob(response.jobId, { status: "completed", error: null });
+          } else {
+            const failureMessage = visionError ?? "Processing failed";
+            toast({
+              title: "Processing failed",
+              description: failureMessage,
+              variant: "destructive",
+            });
+            updateJob(response.jobId, { status: "failed", error: failureMessage });
+          }
+        }
+      } catch (error) {
+        console.error("registerUploadJob failed", error);
+        toast({
+          title: "Upload registration failed",
+          description: error instanceof Error ? error.message : "Unknown error",
+          variant: "destructive",
+        });
+      } finally {
+        setIsRegisteringUpload(false);
+      }
+    },
+    [analysisTarget, toast, updateJob, triggerVision],
+  );
+
+  const handleFileChange = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const files = event.target.files;
+      if (!files || files.length === 0) return;
+
+      const fileList = Array.from(files);
+      for (const file of fileList) {
+        await handleFileUpload(file);
+      }
+
+      event.target.value = "";
+    },
+    [handleFileUpload],
+  );
+
+  const isSubmitDisabled = disabled || !value.trim();
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className={cn(
+        "sticky bottom-4 left-1/2 -translate-x-1/2 z-50 mx-auto min-h-12 w-full max-w-2xl transition-all duration-300 ease-out",
+        className
+      )}
+    >
+      <div className="relative flex flex-col w-full min-h-full bg-gradient-glass backdrop-blur-xl shadow-glow-ice rounded-2xl p-2 border border-glass-border/30 group hover:border-glass-border/50 hover:shadow-xl transition-all duration-300">
+        {/* Frost overlay */}
+        <div className="absolute inset-0 bg-gradient-frost rounded-2xl pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+        
+        {/* Input row */}
+        <div className="flex items-center relative z-10">
+          {/* Plus button */}
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              aria-label="Menu options"
+              className="h-8 w-8 flex items-center justify-center rounded-full bg-muted/50 hover:bg-muted text-foreground/70 hover:text-foreground transition-all ml-1 mr-1 backdrop-blur-sm"
+            >
+              <Plus size={16} />
+            </button>
+            <OptionsMenu 
+              isOpen={isMenuOpen} 
+              onSelect={selectOption}
+              options={menuOptions}
+              placement={dropdownPlacement}
+            />
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            multiple
+            onChange={handleFileChange}
+          />
+
+          {/* Textarea */}
+          <div className="flex-1 relative flex items-center">
+            <textarea
+              ref={textareaRef}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={placeholder}
+              aria-label="Message Input"
+              rows={1}
+              disabled={disabled}
+              className="w-full min-h-8 max-h-24 bg-transparent text-sm font-normal text-foreground placeholder-muted-foreground border-0 outline-none focus:outline-none px-3 pr-10 py-1 resize-none overflow-y-auto"
+            />
+
+            {/* Send button */}
+            <button
+              type="submit"
+              aria-label="Send message"
+              disabled={isSubmitDisabled}
+              className={cn(
+                "ml-auto self-center h-8 w-8 flex items-center justify-center rounded-full border-0 p-0 transition-all",
+                isSubmitDisabled
+                  ? "opacity-40 cursor-not-allowed bg-muted text-muted-foreground"
+                  : "opacity-90 bg-primary text-primary-foreground hover:opacity-100 cursor-pointer hover:shadow-md"
+              )}
+            >
+              <ArrowUp size={16} strokeWidth={2.5} />
+            </button>
+          </div>
+        </div>
+
+        {/* Selected options */}
+        {selectedOptions.length > 0 && (
+          <div className="flex flex-wrap gap-2 mt-2 pl-3 pr-3 z-10 relative">
+            {selectedOptions.map((option) => (
+              <OptionTag key={option} option={option} onRemove={removeOption} />
+            ))}
+          </div>
+        )}
+
+        {jobs.length > 0 && (
+          <div className="mt-3 pl-3 pr-3 pb-1 z-10 relative space-y-2">
+            {jobs.map(job => (
+              <div
+                key={job.id}
+                className="rounded-lg border border-border/40 bg-muted/40 px-3 py-3 text-xs text-foreground/80"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-1">
+                    <span className="font-medium text-sm">{job.fileName}</span>
+                    {job.message && <span className="text-foreground/60">{job.message}</span>}
+                    {job.updatedAt && (
+                      <span className="text-foreground/50">
+                        Updated {new Date(job.updatedAt).toLocaleTimeString()}
+                      </span>
+                    )}
+                    {job.error && <span className="text-destructive">{job.error}</span>}
+                  </div>
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[0.7rem] font-medium uppercase tracking-wide shrink-0",
+                      job.status === "completed" && "bg-emerald-500/20 text-emerald-500",
+                      job.status === "processing" && "bg-amber-500/20 text-amber-500",
+                      job.status === "failed" && "bg-destructive/20 text-destructive",
+                      job.status === "queued" && "bg-primary/10 text-primary",
+                      job.status === "uploading" && "bg-sky-500/20 text-sky-500",
+                    )}
+                  >
+                    {job.status}
+                  </span>
+                </div>
+                {job.resultText && (
+                  <div className="mt-3 rounded-md bg-background/80 p-3 text-foreground/90 shadow-inner">
+                    <p className="font-medium mb-1 text-foreground/80">Extracted Text</p>
+                    <pre className="whitespace-pre-wrap break-words text-xs text-foreground/70">
+                      {job.resultText}
+                    </pre>
+                  </div>
+                )}
+                {job.visionSummary && (
+                  <div className="mt-3 rounded-md bg-background/80 p-3 text-foreground/90 shadow-inner space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="font-medium text-foreground/80">Visual Summary</p>
+                      {job.visionProvider && (
+                        <span className="text-[0.65rem] uppercase tracking-wide bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                          {job.visionProvider}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-foreground/75 whitespace-pre-wrap leading-relaxed">
+                      {job.visionSummary}
+                    </p>
+                    {job.visionMetadata &&
+                      Array.isArray(job.visionMetadata["bullet_points"]) &&
+                      (job.visionMetadata["bullet_points"] as string[]).length > 0 && (
+                        <ul className="list-disc ml-4 space-y-1 text-xs text-foreground/70">
+                          {(job.visionMetadata["bullet_points"] as string[]).map((point, idx) => (
+                            <li key={idx}>{point}</li>
+                          ))}
+                        </ul>
+                      )}
+                    {job.visionMetadata && job.visionMetadata["chart_analysis"] && (
+                      <div className="text-xs text-foreground/60">
+                        <span className="font-medium text-foreground/70">Chart analysis:</span>{" "}
+                        {job.visionMetadata["chart_analysis"]}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+            {isRegisteringUpload && (
+              <div className="rounded-lg border border-dashed border-border/40 bg-muted/20 px-3 py-2 text-xs text-foreground/60">
+                Registering upload...
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </form>
+  );
+}
