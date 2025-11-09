@@ -49,41 +49,41 @@ All colors MUST be HSL.
   }
 
   .dark {
-    --background: 220 20% 8%;
-    --foreground: 210 20% 92%;
+    --background: 220 6% 8%;
+    --foreground: 210 10% 92%;
 
-    --card: 220 18% 12%;
-    --card-foreground: 210 20% 92%;
+    --card: 220 6% 12%;
+    --card-foreground: 210 12% 92%;
 
-    --popover: 220 18% 12%;
-    --popover-foreground: 210 20% 92%;
+    --popover: 220 6% 10%;
+    --popover-foreground: 210 12% 90%;
 
-    --primary: 210 15% 75%;
-    --primary-foreground: 220 20% 10%;
+    --primary: 195 65% 52%;
+    --primary-foreground: 210 20% 96%;
 
-    --secondary: 220 18% 16%;
-    --secondary-foreground: 210 20% 88%;
+    --secondary: 220 5% 18%;
+    --secondary-foreground: 210 10% 88%;
 
-    --muted: 220 18% 16%;
-    --muted-foreground: 220 10% 55%;
+    --muted: 220 5% 20%;
+    --muted-foreground: 220 6% 65%;
 
-    --accent: 200 15% 45%;
-    --accent-foreground: 210 20% 92%;
+    --accent: 195 60% 50%;
+    --accent-foreground: 210 20% 96%;
 
-    --destructive: 0 60% 45%;
-    --destructive-foreground: 210 20% 92%;
+    --destructive: 0 65% 45%;
+    --destructive-foreground: 210 20% 96%;
 
-    --border: 220 15% 20%;
-    --input: 220 15% 20%;
-    --ring: 210 15% 60%;
+    --border: 220 5% 25%;
+    --input: 220 5% 22%;
+    --ring: 195 65% 52%;
 
     /* Dark glacier aesthetic */
-    --glass-bg: 220 20% 14%;
-    --glass-border: 220 15% 22%;
-    --ice-glow: 200 20% 40%;
-    --gradient-glass: linear-gradient(135deg, hsl(220 20% 16% / 0.8), hsl(210 18% 14% / 0.8));
-    --gradient-frost: linear-gradient(180deg, hsl(220 20% 18% / 0.5), hsl(210 18% 14% / 0.3));
-    --glow-ice: 0 0 40px hsl(200 20% 40% / 0.3);
+    --glass-bg: 220 5% 14%;
+    --glass-border: 220 5% 22%;
+    --ice-glow: 195 60% 50%;
+    --gradient-glass: linear-gradient(135deg, hsl(220 6% 14% / 0.85), hsl(220 6% 10% / 0.85));
+    --gradient-frost: linear-gradient(180deg, hsl(220 6% 18% / 0.45), hsl(220 6% 12% / 0.35));
+    --glow-ice: 0 0 40px hsl(195 60% 50% / 0.25);
   }
 }
 
@@ -93,6 +93,15 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-heading tracking-tight text-balance;
   }
 }

@@ -48,6 +48,7 @@ Create `.env.local` (Vite automatically loads `VITE_*` variables):
 VITE_SUPABASE_URL=https://<your-supabase-ref>.supabase.co
 VITE_SUPABASE_FUNCTIONS_URL=https://<your-supabase-ref>.supabase.co/functions/v1
 VITE_SUPABASE_PUBLISHABLE_KEY=<supabase-anon-key>
+VITE_ALPHA_VANTAGE_API_KEY=<alpha-vantage-key>
 ```
 
 Configure Supabase Edge Function secrets (one-time per project):
@@ -99,6 +100,12 @@ npx supabase functions serve --env-file supabase/.env # optional local function 
 5. **Future Scaffolding**
    - Hooks and menu options exist for Whisper ASR and Google TTS pipelines.
    - `src/lib/api.ts` exposes placeholders for voice/image generation APIs.
+6. **Stock Quotes & Charts**
+   - Enter `/quote AAPL`, `/stock MSFT 3m`, or `/ticker NVDA 1y` in the chat input to fetch Alpha Vantage data.
+   - The assistant renders a price card with daily trend chart, change metrics, and key stats.
+7. **Provider Switching**
+   - Use `/model openai`, `/model anthropic`, or `/model gemini` to switch the backing LLM at runtime (defaults to OpenAI).
+   - Environment variables and Supabase function secrets (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) must be configured for each provider you plan to use.
 
 ---
 

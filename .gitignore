@@ -30,6 +30,9 @@ supabase/.branches/
 supabase/.env
 supabase/functions/.edge/
 
+# Google Cloud service accounts
+gen-lang-client-0651350263-790c3e3f8dd4.json
+
 # GitHub Copilot / AI config artifacts
 .copilot/
 

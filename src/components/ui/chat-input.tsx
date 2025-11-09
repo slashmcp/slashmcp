@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, memo } from "react";
-import { Plus, ArrowUp } from "lucide-react";
+import { Plus, ArrowUp, Mic, Square, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   registerUploadJob,
@@ -9,6 +9,7 @@ import {
   type AnalysisTarget,
 } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
+import { transcribeAudio } from "@/lib/voice";
 
 type MenuOption =
   | "Upload Files"
@@ -107,6 +108,13 @@ export function ChatInput({
   const [jobs, setJobs] = useState<UploadJob[]>([]);
   const [isRegisteringUpload, setIsRegisteringUpload] = useState(false);
   const [visionProvider, setVisionProvider] = useState<"gpt4o" | "gemini">("gpt4o");
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const cancelTranscriptionRef = useRef(false);
   const updateJob = useCallback(
     (jobId: string, updates: Partial<UploadJob>) => {
       setJobs((prev) =>
@@ -120,6 +128,162 @@ export function ChatInput({
   const menuRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dropdownPlacement: "top" | "bottom" = jobs.length > 0 ? "top" : "bottom";
+  const cleanupStream = useCallback(() => {
+    mediaStreamRef.current?.getTracks().forEach(track => track.stop());
+    mediaStreamRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    const supported =
+      typeof window !== "undefined" &&
+      typeof navigator !== "undefined" &&
+      !!navigator.mediaDevices &&
+      typeof navigator.mediaDevices.getUserMedia === "function" &&
+      typeof MediaRecorder !== "undefined";
+    setVoiceSupported(Boolean(supported));
+
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        cancelTranscriptionRef.current = true;
+        mediaRecorderRef.current.stop();
+      }
+      cleanupStream();
+    };
+  }, [cleanupStream]);
+
+  const handleTranscription = useCallback(
+    async (blob: Blob) => {
+      setIsTranscribing(true);
+      try {
+        const result = await transcribeAudio(blob);
+        const transcript = result.text?.trim();
+
+        if (transcript) {
+          if (disabled) {
+            setValue(transcript);
+            toast({
+              title: "Voice transcription ready",
+              description: "Review and send when you're ready.",
+            });
+          } else {
+            onSubmit(transcript);
+            setValue("");
+            toast({
+              title: "Voice message sent",
+              description: transcript,
+            });
+          }
+        } else {
+          toast({
+            title: "No speech detected",
+            description: "Try speaking a little longer or closer to the mic.",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        console.error("Voice transcription failed", error);
+        toast({
+          title: "Transcription failed",
+          description: error instanceof Error ? error.message : "Unable to transcribe audio.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsTranscribing(false);
+        setSelectedOptions(prev => prev.filter(opt => opt !== "Voice Assistant"));
+      }
+    },
+    [disabled, onSubmit, toast],
+  );
+
+  const startRecording = useCallback(async () => {
+    if (isRecording || isTranscribing) return;
+    if (!voiceSupported) {
+      toast({
+        title: "Voice not supported",
+        description: "Your browser doesn't support in-browser voice capture.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+
+      const mimeType = typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")
+          ? "audio/ogg;codecs=opus"
+          : "";
+
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      mediaRecorderRef.current = recorder;
+      cancelTranscriptionRef.current = false;
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        setIsRecording(false);
+        cleanupStream();
+        const shouldCancel = cancelTranscriptionRef.current;
+        cancelTranscriptionRef.current = false;
+
+        const recordedBlob = new Blob(audioChunksRef.current, {
+          type: mimeType || "audio/webm",
+        });
+        audioChunksRef.current = [];
+
+        if (shouldCancel || recordedBlob.size === 0) {
+          setSelectedOptions(prev => prev.filter(opt => opt !== "Voice Assistant"));
+          return;
+        }
+
+        handleTranscription(recordedBlob);
+      };
+
+      recorder.start();
+      setIsRecording(true);
+      setSelectedOptions(prev => (prev.includes("Voice Assistant") ? prev : [...prev, "Voice Assistant"]));
+      toast({
+        title: "Listening...",
+        description: "Speak clearly and tap again when finished.",
+      });
+    } catch (error) {
+      console.error("Unable to start recording", error);
+      cleanupStream();
+      mediaRecorderRef.current = null;
+      setIsRecording(false);
+      toast({
+        title: "Microphone error",
+        description:
+          error instanceof Error ? error.message : "We couldn't access your microphone. Check permissions and try again.",
+        variant: "destructive",
+      });
+    }
+  }, [cleanupStream, handleTranscription, isRecording, isTranscribing, toast, voiceSupported]);
+
+  const stopRecording = useCallback(
+    (cancel = false) => {
+      if (!mediaRecorderRef.current) return;
+      if (mediaRecorderRef.current.state === "inactive") return;
+      cancelTranscriptionRef.current = cancel;
+      mediaRecorderRef.current.stop();
+    },
+    [],
+  );
+
+  const toggleRecording = useCallback(() => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      void startRecording();
+    }
+  }, [isRecording, startRecording, stopRecording]);
 
   const menuOptions: MenuOption[] = [
     "Upload Files",
@@ -188,16 +352,23 @@ export function ChatInput({
         setAnalysisTarget("image-ocr");
       } else if (option === "Voice Assistant") {
         setAnalysisTarget("audio-transcription");
+        void startRecording();
       }
 
       setIsMenuOpen(false);
     },
-    [],
+    [startRecording],
   );
 
-  const removeOption = useCallback((option: MenuOption) => {
-    setSelectedOptions(prev => prev.filter(opt => opt !== option));
-  }, []);
+  const removeOption = useCallback(
+    (option: MenuOption) => {
+      if (option === "Voice Assistant") {
+        stopRecording(true);
+      }
+      setSelectedOptions(prev => prev.filter(opt => opt !== option));
+    },
+    [stopRecording],
+  );
 
   const triggerVision = useCallback(
     async (jobId: string) => {
@@ -420,6 +591,29 @@ export function ChatInput({
             onChange={handleFileChange}
           />
 
+          <button
+            type="button"
+            onClick={toggleRecording}
+            disabled={!voiceSupported || isTranscribing}
+            aria-label={isRecording ? "Stop voice recording" : "Start voice recording"}
+            className={cn(
+              "ml-1 mr-1 h-8 w-8 flex items-center justify-center rounded-full transition-all",
+              !voiceSupported || isTranscribing
+                ? "opacity-40 cursor-not-allowed bg-muted text-muted-foreground"
+                : isRecording
+                  ? "bg-primary text-primary-foreground shadow-glow-ice"
+                  : "bg-muted/50 hover:bg-muted text-foreground/70 hover:text-foreground"
+            )}
+          >
+            {isTranscribing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : isRecording ? (
+              <Square className="h-4 w-4" strokeWidth={2.5} />
+            ) : (
+              <Mic className="h-4 w-4" strokeWidth={2.5} />
+            )}
+          </button>
+
           {/* Textarea */}
           <div className="flex-1 relative flex items-center">
             <textarea
@@ -457,6 +651,13 @@ export function ChatInput({
             {selectedOptions.map((option) => (
               <OptionTag key={option} option={option} onRemove={removeOption} />
             ))}
+          </div>
+        )}
+
+        {(isRecording || isTranscribing) && (
+          <div className="flex items-center gap-2 mt-2 pl-3 pr-3 z-10 relative text-xs text-foreground/70">
+            <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+            <span>{isRecording ? "Listening..." : "Transcribing voice message..."}</span>
           </div>
         )}
 

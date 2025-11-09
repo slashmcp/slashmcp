@@ -1,29 +1,120 @@
 import { ChatMessage } from "@/components/ChatMessage";
 import { ChatInput } from "@/components/ui/chat-input";
 import { useChat } from "@/hooks/useChat";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
+import { Volume2, VolumeX } from "lucide-react";
+import { useVoicePlayback } from "@/hooks/useVoicePlayback";
+import { useToast } from "@/components/ui/use-toast";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { cn } from "@/lib/utils";
 
 const Index = () => {
-  const { messages, sendMessage, isLoading } = useChat();
+  const { messages, sendMessage, isLoading, providerLabel } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastSpokenRef = useRef<string>("");
+  const { toast } = useToast();
+  const { enabled: voicePlaybackEnabled, toggle: toggleVoicePlayback, speak, stop, isSpeaking } = useVoicePlayback();
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    if (isLoading || !voicePlaybackEnabled) return;
+
+    const lastAssistantMessage = [...messages]
+      .reverse()
+      .find((message) => message.role === "assistant" && message.type === "text");
+
+    const content = lastAssistantMessage?.content?.trim();
+    if (!content || content === lastSpokenRef.current) return;
+
+    speak(content, {
+      voice: "en-US-Studio-Q",
+      languageCode: "en-US",
+    })
+      .then(() => {
+        lastSpokenRef.current = content;
+      })
+      .catch((error) => {
+        console.error("Speech playback failed", error);
+        toast({
+          title: "Speech playback failed",
+          description: error instanceof Error ? error.message : "Unable to play synthesized audio.",
+          variant: "destructive",
+        });
+      });
+  }, [isLoading, messages, speak, toast, voicePlaybackEnabled]);
+
+  const handleToggleVoice = useCallback(() => {
+    if (voicePlaybackEnabled) {
+      stop();
+    } else {
+      lastSpokenRef.current = "";
+    }
+    toggleVoicePlayback();
+  }, [stop, toggleVoicePlayback, voicePlaybackEnabled]);
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
+      <div className="px-4 pt-6">
+        <div className="max-w-4xl mx-auto flex flex-col gap-4">
+          <div className="flex items-center justify-between gap-4 rounded-2xl border border-border/40 bg-muted/30 px-4 py-3 backdrop-blur">
+            <div className="flex items-center gap-3">
+              <img src="/slashmcp-logo.svg" alt="SlashMCP logo" className="h-10 w-auto" />
+              <div className="leading-tight">
+                <p className="font-semibold text-base text-foreground">SlashMCP Assistant</p>
+                <p className="text-[0.7rem] uppercase tracking-[0.35em] text-muted-foreground">
+                  Model Context Protocol
+                </p>
+              </div>
+            </div>
+            <ThemeToggle />
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <button
+              type="button"
+              onClick={handleToggleVoice}
+              className="flex items-center gap-2 rounded-full border border-border/40 bg-muted/40 px-3 py-1 text-xs font-medium text-foreground/80 hover:bg-muted transition-colors"
+            >
+              {voicePlaybackEnabled ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+              <span>Voice replies {voicePlaybackEnabled ? "on" : "off"}</span>
+            </button>
+            {voicePlaybackEnabled && (
+              <div className="flex items-center gap-2 text-xs text-foreground/60">
+                <span
+                  className={cn(
+                    "h-2 w-2 rounded-full",
+                    isSpeaking ? "bg-primary animate-ping" : "bg-muted-foreground/60",
+                  )}
+                />
+                <span>{isSpeaking ? "Speaking..." : "Ready to speak"}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-8">
         <div className="max-w-4xl mx-auto space-y-6">
-          {messages.length === 0 && (
-            <div className="text-center mt-20">
-              <h1 className="text-4xl font-bold text-foreground mb-4">SlashMCP Assistant</h1>
+          {messages.length === 0 ? (
+            <div className="text-center mt-20 space-y-3">
+              <h1 className="text-4xl font-bold text-foreground">SlashMCP Assistant</h1>
               <p className="text-muted-foreground">Your personal AI research assistant</p>
+              <span className="inline-flex items-center justify-center rounded-full border border-border/40 bg-muted/40 px-3 py-1 text-xs uppercase tracking-wide text-foreground/70">
+                Model: {providerLabel}
+              </span>
+            </div>
+          ) : (
+            <div className="flex justify-center">
+              <span className="inline-flex items-center justify-center rounded-full border border-border/40 bg-muted/30 px-3 py-1 text-2xs uppercase tracking-wide text-foreground/60">
+                Model: {providerLabel}
+              </span>
             </div>
           )}
           {messages.map((message, index) => (
-            <ChatMessage key={index} role={message.role} content={message.content} />
+            <ChatMessage key={index} message={message} />
           ))}
           {isLoading && (
             <div className="flex gap-3 justify-start animate-fade-in">
