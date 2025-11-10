@@ -1112,10 +1112,25 @@ export function useChat() {
           ]);
         } else {
           console.error("MCP command error:", error);
+          const errorMessage = error instanceof Error ? error.message : String(error);
           if (context === "stock") {
+            let friendlyMessage =
+              "Sorry, I wasn't able to retrieve that stock quote. Please try again in a moment.";
+
+            if (/Alpha Vantage/i.test(errorMessage) && /premium/i.test(errorMessage)) {
+              friendlyMessage =
+                "Alpha Vantage returned a premium-only error for that ticker. Add a `TWELVEDATA_API_KEY` secret (or upgrade your Alpha Vantage plan) and try again.";
+            } else if (/TWELVEDATA_API_KEY is not configured/i.test(errorMessage)) {
+              friendlyMessage =
+                "I couldn't fetch that quote because Twelve Data fallback isn't configured. Set `TWELVEDATA_API_KEY` in Supabase secrets or `.env` to enable the backup provider.";
+            } else if (/rate limit/i.test(errorMessage)) {
+              friendlyMessage =
+                "We're temporarily rate-limited on stock data. Give it a minute and try again.";
+            }
+
             toast({
               title: "Stock lookup failed",
-              description: "Unable to fetch stock data right now.",
+              description: errorMessage,
               variant: "destructive",
             });
             setMessages(prev => [
@@ -1123,14 +1138,13 @@ export function useChat() {
               {
                 role: "assistant",
                 type: "text",
-                content:
-                  "Sorry, I wasn't able to retrieve that stock quote. Please try again in a moment.",
+                content: friendlyMessage,
               },
             ]);
           } else {
             toast({
               title: "MCP command failed",
-              description: "Unable to execute the MCP command right now.",
+              description: errorMessage,
               variant: "destructive",
             });
           }
