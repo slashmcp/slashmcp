@@ -2,14 +2,24 @@ import { ChatMessage } from "@/components/ChatMessage";
 import { ChatInput } from "@/components/ui/chat-input";
 import { useChat } from "@/hooks/useChat";
 import { useEffect, useRef, useCallback } from "react";
-import { Volume2, VolumeX } from "lucide-react";
+import { Volume2, VolumeX, LogIn, LogOut } from "lucide-react";
 import { useVoicePlayback } from "@/hooks/useVoicePlayback";
 import { useToast } from "@/components/ui/use-toast";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
 
 const Index = () => {
-  const { messages, sendMessage, isLoading, providerLabel } = useChat();
+  const {
+    messages,
+    sendMessage,
+    isLoading,
+    providerLabel,
+    session,
+    authReady,
+    isAuthLoading,
+    signInWithGoogle,
+    signOut,
+  } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastSpokenRef = useRef<string>("");
   const { toast } = useToast();
@@ -69,7 +79,41 @@ const Index = () => {
                 </p>
               </div>
             </div>
-            <ThemeToggle />
+            <div className="flex items-center gap-2">
+              {authReady && (
+                session ? (
+                  <div className="flex items-center gap-2">
+                    <span className="hidden sm:inline text-xs text-foreground/60 truncate max-w-[140px]" title={session.user?.email ?? undefined}>
+                      {session.user?.email ?? "Signed in"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void signOut()}
+                      className="flex items-center gap-1 rounded-full border border-border/40 bg-muted/40 px-3 py-1 text-xs font-medium text-foreground/80 hover:bg-muted transition-colors"
+                    >
+                      <LogOut className="h-3.5 w-3.5" />
+                      <span>Sign out</span>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void signInWithGoogle()}
+                    disabled={isAuthLoading}
+                    className={cn(
+                      "flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-xs font-medium transition-colors",
+                      isAuthLoading
+                        ? "opacity-60 cursor-not-allowed"
+                        : "text-primary hover:bg-primary/20 hover:text-primary"
+                    )}
+                  >
+                    <LogIn className="h-3.5 w-3.5" />
+                    <span>{isAuthLoading ? "Connecting..." : "Sign in with Google"}</span>
+                  </button>
+                )
+              )}
+              <ThemeToggle />
+            </div>
           </div>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <button

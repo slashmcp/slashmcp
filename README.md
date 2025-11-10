@@ -49,6 +49,11 @@ VITE_SUPABASE_URL=https://<your-supabase-ref>.supabase.co
 VITE_SUPABASE_FUNCTIONS_URL=https://<your-supabase-ref>.supabase.co/functions/v1
 VITE_SUPABASE_PUBLISHABLE_KEY=<supabase-anon-key>
 VITE_ALPHA_VANTAGE_API_KEY=<alpha-vantage-key>
+VITE_MCP_GATEWAY_URL=http://localhost:8989/invoke # MCP gateway proxy endpoint
+VITE_SUPABASE_REDIRECT_URL=http://localhost:5173          # optional: explicit OAuth redirect target
+TWELVEDATA_API_KEY=<twelve-data-key>                # optional fallback provider
+ALPHAVANTAGE_CACHE_TTL_MS=300000 # optional Supabase function cache TTL (5 min)
+POLYMARKET_CACHE_TTL_MS=120000   # optional cache window for Polymarket lookups
 ```
 
 Configure Supabase Edge Function secrets (one-time per project):
@@ -60,6 +65,12 @@ npx supabase secrets set \
   SERVICE_ROLE_KEY=<supabase-service-role-key> \
   OPENAI_API_KEY=<openai-key> \
   GEMINI_API_KEY=<optional-gemini-key> \
+  ALPHAVANTAGE_API_KEY=<alpha-vantage-key> \
+  TWELVEDATA_API_KEY=<twelve-data-key> \
+  ALPHAVANTAGE_CACHE_TTL_MS=300000 \
+  POLYMARKET_CACHE_TTL_MS=120000 \
+  GOOGLE_CLIENT_ID=<google-oauth-client-id> \
+  GOOGLE_CLIENT_SECRET=<google-oauth-client-secret> \
   AWS_REGION=<aws-region> \
   AWS_ACCESS_KEY_ID=<aws-access-key> \
   AWS_SECRET_ACCESS_KEY=<aws-secret> \
@@ -103,9 +114,21 @@ npx supabase functions serve --env-file supabase/.env # optional local function 
 6. **Stock Quotes & Charts**
    - Enter `/quote AAPL`, `/stock MSFT 3m`, or `/ticker NVDA 1y` in the chat input to fetch Alpha Vantage data.
    - The assistant renders a price card with daily trend chart, change metrics, and key stats.
+   - MCP endpoint support is scaffolded so `/alphavantage-mcp get_stock_chart symbol=NVDA` uses the same rendering pipeline (Supabase edge function `mcp`).
+   - Quotes are cached for 5 minutes and automatically fall back to Twelve Data (if `TWELVEDATA_API_KEY` is set) when Alpha Vantage hits premium/rate limits.
+8. **Prediction Markets**
+   - Use `/polymarket-mcp get_market_price market_id=us_election_2024` to pull live odds from Polymarket via the Supabase `mcp` function.
+   - Responses include best bid/ask, implied probability, liquidity, and are cached for 2 minutes (configurable via `POLYMARKET_CACHE_TTL_MS`).
 7. **Provider Switching**
    - Use `/model openai`, `/model anthropic`, or `/model gemini` to switch the backing LLM at runtime (defaults to OpenAI).
    - Environment variables and Supabase function secrets (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) must be configured for each provider you plan to use.
+
+9. **MCP Slash Commands & Registry**
+   - Authenticate via the header sign-in button (Google OAuth) or the fallback chat command `/slashmcp login email=user@example.com password=secret`.
+   - Once signed in, manage servers with `/slashmcp list`, `/slashmcp add <name> <https://gateway>` (plus optional `auth=`/`key=` parameters), and `/slashmcp remove <name|serverId>`.
+   - Provider shortcuts like `/gemini` or `/playwright` map to pre-defined presets and prompt for any required secrets.
+   - Natural language detectors route common stock and Polymarket questions to the appropriate MCP server automatically when available.
+   - Dynamic registry records are stored per-user in Supabase (`mcp_servers` table) and proxied through new edge functions (`mcp-register`, `mcp-get-registry`, `mcp-remove`, `mcp-proxy`).
 
 ---
 
@@ -144,6 +167,7 @@ npx supabase functions deploy <function-name> --project-ref <ref>
 - Set S3 CORS to allow your dev/prod origins and methods (`GET,PUT,POST,HEAD`).
 - When deploying to new environments, rotate and populate Supabase function secrets before invoking uploads/vision workers.
 - Voice and image generation features will require additional secrets (Whisper, Google TTS, Gemini / OpenAI image endpoints).
+- MCP gateway should expose a single `/invoke` endpoint compatible with the JSON payload emitted by `src/lib/mcp/client.ts`.
 
 ---
 
