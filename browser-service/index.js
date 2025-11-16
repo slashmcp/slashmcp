@@ -19,6 +19,7 @@ let browser = null;
 
 async function getBrowser() {
   if (!browser) {
+    console.log('Launching browser...');
     browser = await puppeteer.launch({
       headless: true,
       args: [
@@ -28,15 +29,32 @@ async function getBrowser() {
         '--disable-accelerated-2d-canvas',
         '--disable-gpu',
         '--window-size=1920x1080'
-      ]
+      ],
+      timeout: 60000 // 60 second timeout for browser launch
     });
+    console.log('Browser launched successfully');
   }
   return browser;
 }
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'browser-automation' });
+// Health check (also keeps service awake on free tier)
+app.get('/health', async (req, res) => {
+  try {
+    // Try to get browser to ensure it's ready
+    const browserInstance = await getBrowser();
+    res.json({ 
+      status: 'ok', 
+      service: 'browser-automation',
+      browserReady: !!browserInstance
+    });
+  } catch (error) {
+    res.json({ 
+      status: 'ok', 
+      service: 'browser-automation',
+      browserReady: false,
+      message: error.message
+    });
+  }
 });
 
 // Main invoke endpoint (MCP gateway format)

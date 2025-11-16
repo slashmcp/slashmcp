@@ -20,7 +20,7 @@ const MCP_PROXY_URL = fallbackFunctionsUrl
 
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-const MCP_TIMEOUT_MS = 60_000;
+const MCP_TIMEOUT_MS = 120_000; // 2 minutes for browser automation
 
 export class McpClientNotConfiguredError extends Error {
   constructor() {
