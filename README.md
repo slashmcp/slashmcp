@@ -2,6 +2,8 @@
 
 MCP-powered AI workspace for document intelligence.
 
+<!-- Trigger Vercel redeploy -->
+
 - Drag-and-drop uploads for PDFs, images, and media
 - Vision-first analysis with GPT‑4o (Gemini fallback scaffolding is in place)
 - OCR orchestration through AWS Textract
