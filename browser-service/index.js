@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import puppeteer from 'puppeteer-core';
+import { execSync } from 'child_process';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -20,12 +21,35 @@ let browser = null;
 async function getBrowser() {
   if (!browser) {
     console.log('Launching browser...');
-    // Use system Chromium if available, otherwise try default
-    const executablePath = process.env.CHROMIUM_PATH || 
-                          process.env.PUPPETEER_EXECUTABLE_PATH ||
-                          '/usr/bin/chromium' ||
-                          '/usr/bin/chromium-browser' ||
-                          null;
+    // Try to find Chromium in common locations
+    const possiblePaths = [
+      process.env.CHROMIUM_PATH,
+      process.env.PUPPETEER_EXECUTABLE_PATH,
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+      '/usr/bin/google-chrome',
+      '/usr/bin/google-chrome-stable'
+    ].filter(Boolean);
+    
+    let executablePath = null;
+    for (const path of possiblePaths) {
+      try {
+        execSync(`which ${path}`, { stdio: 'ignore' });
+        executablePath = path;
+        break;
+      } catch {
+        // Try next path
+      }
+    }
+    
+    // If still not found, try to find it with 'which'
+    if (!executablePath) {
+      try {
+        executablePath = execSync('which chromium || which chromium-browser || which google-chrome', { encoding: 'utf8' }).trim();
+      } catch {
+        // Will use default
+      }
+    }
     
     const launchOptions = {
       headless: true,
