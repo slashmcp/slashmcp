@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import puppeteer from 'puppeteer-core';
+import { install, getInstalledBrowsers, canDownload } from '@puppeteer/browsers';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,30 +22,53 @@ async function getBrowser() {
   if (!browser) {
     console.log('Launching browser...');
     
-    // Try common Chromium paths (installed via apt-get in build)
-    const possiblePaths = [
-      process.env.CHROMIUM_PATH,
-      process.env.PUPPETEER_EXECUTABLE_PATH,
-      '/usr/bin/chromium',
-      '/usr/bin/chromium-browser',
-      '/usr/bin/google-chrome',
-      '/usr/bin/google-chrome-stable'
-    ].filter(Boolean);
+    let executablePath = process.env.CHROMIUM_PATH || 
+                        process.env.PUPPETEER_EXECUTABLE_PATH;
     
-    let executablePath = null;
-    for (const path of possiblePaths) {
-      try {
-        const { execSync } = await import('child_process');
-        execSync(`which ${path}`, { stdio: 'ignore' });
-        executablePath = path;
-        break;
-      } catch {
-        // Try next path
+    if (!executablePath) {
+      // Check if Chromium is already installed
+      const cacheDir = process.env.HOME || '/tmp/.puppeteer';
+      const installedBrowsers = await getInstalledBrowsers({ cacheDir });
+      const chromium = installedBrowsers.find(b => b.browser === 'chromium');
+      
+      if (chromium) {
+        executablePath = chromium.executablePath;
+        console.log(`Using cached Chromium: ${executablePath}`);
+      } else {
+        // Download Chromium
+        console.log('Downloading Chromium (this may take 2-3 minutes on first run)...');
+        try {
+          const result = await install({
+            browser: 'chromium',
+            buildId: 'latest',
+            cacheDir: cacheDir
+          });
+          executablePath = result.executablePath;
+          console.log(`Chromium downloaded to: ${executablePath}`);
+        } catch (error) {
+          console.error('Failed to download Chromium:', error);
+          // Fallback to channel option
+          browser = await puppeteer.launch({
+            channel: 'chrome',
+            headless: true,
+            args: [
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--disable-dev-shm-usage',
+              '--disable-accelerated-2d-canvas',
+              '--disable-gpu',
+              '--window-size=1920x1080'
+            ],
+            timeout: 120000 // 2 minutes for download
+          });
+          console.log('Browser launched with channel option (fallback)');
+          return browser;
+        }
       }
     }
     
-    // If no system Chromium found, try channel option (uses system Chrome if available)
-    const launchOptions = {
+    browser = await puppeteer.launch({
+      executablePath,
       headless: true,
       args: [
         '--no-sandbox',
@@ -54,19 +78,8 @@ async function getBrowser() {
         '--disable-gpu',
         '--window-size=1920x1080'
       ],
-      timeout: 60000
-    };
-    
-    if (executablePath) {
-      launchOptions.executablePath = executablePath;
-      console.log(`Using Chromium at: ${executablePath}`);
-    } else {
-      // Try channel option as fallback
-      launchOptions.channel = 'chrome';
-      console.log('Using channel option (system Chrome/Chromium)');
-    }
-    
-    browser = await puppeteer.launch(launchOptions);
+      timeout: 120000
+    });
     console.log('Browser launched successfully');
   }
   return browser;
