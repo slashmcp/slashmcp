@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -20,7 +20,14 @@ let browser = null;
 async function getBrowser() {
   if (!browser) {
     console.log('Launching browser...');
-    browser = await puppeteer.launch({
+    // Use system Chromium if available, otherwise try default
+    const executablePath = process.env.CHROMIUM_PATH || 
+                          process.env.PUPPETEER_EXECUTABLE_PATH ||
+                          '/usr/bin/chromium' ||
+                          '/usr/bin/chromium-browser' ||
+                          null;
+    
+    const launchOptions = {
       headless: true,
       args: [
         '--no-sandbox',
@@ -30,8 +37,17 @@ async function getBrowser() {
         '--disable-gpu',
         '--window-size=1920x1080'
       ],
-      timeout: 60000 // 60 second timeout for browser launch
-    });
+      timeout: 60000
+    };
+    
+    if (executablePath) {
+      launchOptions.executablePath = executablePath;
+      console.log(`Using Chromium at: ${executablePath}`);
+    } else {
+      console.log('Using default Puppeteer Chromium');
+    }
+    
+    browser = await puppeteer.launch(launchOptions);
     console.log('Browser launched successfully');
   }
   return browser;
