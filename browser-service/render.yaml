@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: browser-service
+    env: node
+    buildCommand: cd browser-service && npm install
+    startCommand: cd browser-service && npm start
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: NODE_ENV
+        value: production
+
