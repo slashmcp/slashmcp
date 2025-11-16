@@ -31,24 +31,62 @@ function encodeSecret(secret?: string | null): string | null {
 function isHttpsUrl(value: string): boolean {
   try {
     const url = new URL(value);
-    return url.protocol === "https:";
+    if (url.protocol === "https:") {
+      return true;
+    }
+    // Allow http for localhost-style development URLs so that MCP servers
+    // running on the developer machine can be registered without requiring
+    // a public HTTPS tunnel.
+    if (url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1")) {
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }
 }
 
-async function performHealthCheck(gatewayUrl: string): Promise<{ ok: boolean; toolCount?: number; message?: string }> {
+async function performHealthCheck(
+  gatewayUrl: string,
+): Promise<{ ok: boolean; toolCount?: number; message?: string }> {
   try {
     const url = new URL("listTools", gatewayUrl.endsWith("/") ? gatewayUrl : `${gatewayUrl}/`);
     const response = await fetch(url.toString(), { method: "GET", headers: { Accept: "application/json" } });
+
+    // If the gateway responds at all, consider it reachable. We only use the
+    // status and body to populate metadata for the user; a non-2xx status
+    // shouldn't block registration (some MCP servers may not expose /listTools).
     if (!response.ok) {
-      const text = await response.text();
-      return { ok: false, message: `Gateway responded with ${response.status}: ${text}` };
+      const text = await response.text().catch(() => "");
+      return {
+        ok: true,
+        message: `Health check reachable but non-2xx (${response.status}): ${text?.slice(0, 200)}`,
+      };
     }
-    const data = await response.json();
-    const toolCount = Array.isArray(data?.tools) ? data.tools.length : undefined;
+
+    const data = await response.json().catch(() => undefined);
+    const toolCount = Array.isArray((data as { tools?: unknown[] })?.tools)
+      ? (data as { tools: unknown[] }).tools.length
+      : undefined;
     return { ok: true, toolCount };
   } catch (error) {
+    // As a last resort, still allow localhost-style gateways to register even
+    // if the health check fails entirely (e.g. server starting up).
+    try {
+      const url = new URL(gatewayUrl);
+      if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
+        return {
+          ok: true,
+          message:
+            error instanceof Error
+              ? `Health check skipped for localhost gateway: ${error.message}`
+              : "Health check skipped for localhost gateway.",
+        };
+      }
+    } catch {
+      // ignore parse errors and fall through
+    }
+
     return { ok: false, message: error instanceof Error ? error.message : String(error) };
   }
 }

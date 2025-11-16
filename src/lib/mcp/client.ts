@@ -1,12 +1,22 @@
 import type { McpInvocation, McpInvocationResponse, McpInvocationResult } from "./types";
+import { supabaseClient } from "../supabaseClient";
 
 const fallbackFunctionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL;
-const MCP_GATEWAY_URL =
+
+// Static servers (like alphavantage-mcp, polymarket-mcp, gemini-mcp) use the
+// built-in MCP gateway function.
+const MCP_STATIC_GATEWAY_URL =
   import.meta.env.VITE_MCP_GATEWAY_URL && import.meta.env.VITE_MCP_GATEWAY_URL.trim() !== ""
     ? import.meta.env.VITE_MCP_GATEWAY_URL.trim()
     : fallbackFunctionsUrl
     ? `${fallbackFunctionsUrl.replace(/\/+$/, "")}/mcp`
     : undefined;
+
+// Dynamic, user-registered servers (srv_...) are accessed via the mcp-proxy
+// Supabase function, which resolves per-user gateway URLs from the registry.
+const MCP_PROXY_URL = fallbackFunctionsUrl
+  ? `${fallbackFunctionsUrl.replace(/\/+$/, "")}/mcp-proxy`
+  : undefined;
 
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
@@ -20,7 +30,10 @@ export class McpClientNotConfiguredError extends Error {
 }
 
 export async function invokeMcpCommand(invocation: McpInvocation): Promise<McpInvocationResponse> {
-  if (!MCP_GATEWAY_URL) {
+  const isDynamicServer = invocation.serverId.toLowerCase().startsWith("srv_");
+  const targetUrl = isDynamicServer ? MCP_PROXY_URL : MCP_STATIC_GATEWAY_URL;
+
+  if (!targetUrl) {
     throw new McpClientNotConfiguredError();
   }
 
@@ -32,15 +45,39 @@ export async function invokeMcpCommand(invocation: McpInvocation): Promise<McpIn
       "Content-Type": "application/json",
     };
 
-    if (SUPABASE_ANON_KEY) {
+    if (isDynamicServer) {
+      // For user-registered servers, authenticate as the current Supabase user
+      // so the edge function can look up servers scoped to that user.
+      const {
+        data: { session },
+      } = await supabaseClient.auth.getSession();
+
+      if (!session?.access_token) {
+        throw new Error("Please sign in to use registered MCP servers (e.g. /slashmcp and srv_... ids).");
+      }
+
+      headers.Authorization = `Bearer ${session.access_token}`;
+      if (SUPABASE_ANON_KEY) {
+        headers.apikey = SUPABASE_ANON_KEY;
+      }
+    } else if (SUPABASE_ANON_KEY) {
       headers.apikey = SUPABASE_ANON_KEY;
       headers.Authorization = `Bearer ${SUPABASE_ANON_KEY}`;
     }
 
-    const response = await fetch(MCP_GATEWAY_URL, {
+    const body = isDynamicServer
+      ? {
+          serverId: invocation.serverId,
+          path: "invoke",
+          method: "POST",
+          body: invocation,
+        }
+      : invocation;
+
+    const response = await fetch(targetUrl, {
       method: "POST",
       headers,
-      body: JSON.stringify(invocation),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
 

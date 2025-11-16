@@ -67,7 +67,16 @@ function stripWrappingQuotes(value: string): string {
 }
 
 function normalizeServerId(raw: string): McpServerId | null {
-  const candidate = raw.toLowerCase() as McpServerId;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+
+  // Dynamic, user-registered servers are stored with ids like srv_...
+  if (lower.startsWith("srv_")) {
+    return lower;
+  }
+
+  const candidate = lower as McpServerId;
   return findServerDefinition(candidate) ? candidate : null;
 }
 

@@ -1,4 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import {
+  Agent,
+  type AgentInputItem,
+  type Handoff,
+  type Tool,
+  Runner,
+} from "https://esm.sh/@openai/agents@0.0.9";
 
 type Provider = "openai" | "anthropic" | "gemini";
 
@@ -7,6 +14,9 @@ const SYSTEM_PROMPT =
   "You are a helpful AI research assistant speaking aloud through text-to-speech. Respond in natural spoken sentences, avoid stage directions, asterisks, or emojis, and keep punctuation simple so it sounds good when read aloud. Provide clear answers, cite important facts conversationally, and offer actionable insight when useful.";
 
 const encoder = new TextEncoder();
+
+const PROJECT_URL = Deno.env.get("PROJECT_URL") ?? Deno.env.get("SUPABASE_URL") ?? "";
+const MCP_GATEWAY_URL = PROJECT_URL ? `${PROJECT_URL.replace(/\/+$/, "")}/functions/v1/mcp` : "";
 
 function getCorsHeaders(origin: string | null): Record<string, string> {
   const isAllowed = !origin || allowedOrigins.includes("*") || allowedOrigins.includes(origin);
@@ -50,6 +60,138 @@ function mapMessagesForGemini(messages: Array<{ role: string; content: string }>
   }));
 }
 
+// --- Multi-agent setup using OpenAI Agents SDK for the OpenAI provider ---
+
+const mcpProxyTool: Tool = {
+  name: "mcp_proxy",
+  description:
+    "Executes a registered MCP command via the slashmcp backend. Input must be a string in the format: /<server-id> <command> [param=value...]",
+  parameters: {
+    type: "object",
+    properties: {
+      command: {
+        type: "string",
+        description: 'The full MCP command string, e.g., "/alphavantage-mcp get_stock_chart symbol=NVDA"',
+      },
+    },
+    required: ["command"],
+  },
+  async run({ command }: { command: string }) {
+    if (!MCP_GATEWAY_URL) {
+      return "MCP gateway URL is not configured on the server.";
+    }
+
+    const trimmed = (command ?? "").trim();
+    if (!trimmed.startsWith("/")) {
+      return 'Invalid MCP command format. Expected something like "/alphavantage-mcp get_quote symbol=NVDA".';
+    }
+
+    const [serverAndSuffix, ...paramTokens] = trimmed.split(/\s+/);
+    const serverId = serverAndSuffix.slice(1); // strip leading "/"
+
+    // Assume the first token after the server id is the MCP command name.
+    let mcpCommand: string | undefined;
+    const args: Record<string, string> = {};
+
+    if (paramTokens.length > 0) {
+      mcpCommand = paramTokens.shift()!;
+    }
+
+    for (const token of paramTokens) {
+      const eqIndex = token.indexOf("=");
+      if (eqIndex <= 0) continue;
+      const key = token.slice(0, eqIndex);
+      const value = token.slice(eqIndex + 1);
+      args[key] = value;
+    }
+
+    try {
+      const response = await fetch(MCP_GATEWAY_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          serverId,
+          command: mcpCommand,
+          args,
+          positionalArgs: [],
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        throw new Error(
+          `MCP gateway request failed with status ${response.status}${
+            errorText ? `: ${errorText.slice(0, 200)}` : ""
+          }`,
+        );
+      }
+
+      const data = await response.json();
+      return JSON.stringify(data, null, 2);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return `Error executing MCP command: ${message}`;
+    }
+  },
+};
+
+const mcpToolAgent = new Agent({
+  name: "MCP_Tool_Agent",
+  instructions:
+    "You are an expert in executing Model Context Protocol (MCP) commands. Your only tool is the `mcp_proxy`. " +
+    "When a user request requires external data or a specific tool, you must formulate the correct MCP command and use the `mcp_proxy` tool. " +
+    "You can call any registered MCP server, including:\n" +
+    "- `alphavantage-mcp` for stock and market data\n" +
+    "- `polymarket-mcp` for prediction market odds\n" +
+    "- `gemini-mcp` for lightweight text generation\n" +
+    "- `playwright-mcp` for browser automation and Playwright test workflows (navigation, scraping, generating or healing tests)\n" +
+    "For Playwright-related requests such as generating tests, exploring an app, or repairing failing tests, prefer `playwright-mcp` commands like " +
+    "`/playwright-mcp navigate_and_scrape url=... selector=...` or other tools documented by that server. " +
+    "Do not answer questions directly; instead, call the tool and return its results.",
+  tools: [mcpProxyTool],
+});
+
+const finalAnswerAgent = new Agent({
+  name: "Final_Answer_Agent",
+  instructions:
+    "You are the final response generator. Your task is to take the results from the MCP_Tool_Agent and the user's original query, " +
+    "and synthesize a concise, helpful, and professional final answer. Do not use any tools.",
+});
+
+const mcpHandoff: Handoff = {
+  name: "handoff_to_mcp_tool",
+  description:
+    "Use this handoff when the user's request requires external data or tool execution (e.g., stock prices, market odds, document analysis).",
+  targetAgent: mcpToolAgent,
+  inputFilter: (input: AgentInputItem[]) => input,
+};
+
+const finalHandoff: Handoff = {
+  name: "handoff_to_final_answer",
+  description: "Use this handoff after the MCP_Tool_Agent has executed its command and returned a result.",
+  targetAgent: finalAnswerAgent,
+  inputFilter: (input: AgentInputItem[]) => input,
+};
+
+const orchestratorAgent = new Agent({
+  name: "Orchestrator_Agent",
+  instructions:
+    "Your primary goal is to determine the best course of action to answer the user's question. " +
+    "If the request is a simple chat, answer directly. " +
+    "If it requires external data or a tool (like stock prices, prediction markets, document analysis, or browser automation with Playwright), " +
+    "use the `handoff_to_mcp_tool` handoff so the MCP_Tool_Agent can call MCP servers via the `mcp_proxy` tool. " +
+    "For example, when the user asks you to visit a website, scrape information from a page, or generate/repair Playwright tests, " +
+    "you should trigger `handoff_to_mcp_tool` so it can use the `playwright-mcp` server. " +
+    "If you receive tool results and further synthesis is needed, use the `handoff_to_final_answer` handoff.",
+  handoffs: [mcpHandoff, finalHandoff],
+});
+
+const defaultRunner = new Runner({
+  model: "gpt-4.1-mini",
+});
+
 serve(async (req) => {
   const origin = req.headers.get("Origin");
   const corsHeaders = getCorsHeaders(origin);
@@ -85,34 +227,44 @@ serve(async (req) => {
         throw new Error("OPENAI_API_KEY is not configured");
       }
 
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          stream: true,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            ...conversation,
-          ],
-        }),
-      });
+      const lastUserMessage = conversation.length
+        ? conversation[conversation.length - 1]?.content ?? ""
+        : "";
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("OpenAI error:", response.status, errorText);
-        return new Response(JSON.stringify({ error: "OpenAI request failed" }), {
-          status: response.status,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+      // Run the multi-agent workflow via the OpenAI Agents SDK.
+      const events = await defaultRunner.run(
+        orchestratorAgent,
+        lastUserMessage,
+        {
+          tools: [mcpProxyTool],
+          maxTurns: 15,
+          stream: true,
+        },
+      );
+
+      let finalOutput = "";
+
+      // Collect the final output text from the streaming events.
+      for await (const event of events as AsyncIterable<{ type: string; output?: unknown }>) {
+        if (event.type === "finalOutput" && event.output !== undefined) {
+          if (typeof event.output === "string") {
+            finalOutput = event.output;
+          } else {
+            try {
+              finalOutput = JSON.stringify(event.output);
+            } catch {
+              finalOutput = String(event.output);
+            }
+          }
+        }
       }
 
-      return new Response(response.body, {
-        headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
-      });
+      if (!finalOutput) {
+        finalOutput =
+          "I was not able to generate a response. Please try rephrasing your question or asking again in a moment.";
+      }
+
+      return respondWithStreamedText(finalOutput, corsHeaders);
     }
 
     if (selectedProvider === "anthropic") {

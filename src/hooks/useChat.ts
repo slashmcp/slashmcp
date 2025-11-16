@@ -813,17 +813,25 @@ export function useChat() {
     const userMsg: Message = { role: "user", type: "text", content: input };
     setMessages(prev => [...prev, userMsg]);
 
-    const imagineMatch = IMAGE_COMMAND_REGEX.exec(input.trim());
+    const trimmedInput = input.trim();
+
+    const imagineMatch = IMAGE_COMMAND_REGEX.exec(trimmedInput);
     if (imagineMatch) {
       const promptText = imagineMatch[1]?.trim() ?? "";
       await runImageGeneration(promptText);
       return;
     }
 
-    const naturalImagePrompt = extractImagePrompt(input);
-    if (naturalImagePrompt) {
-      await runImageGeneration(naturalImagePrompt);
-      return;
+    // If this looks like a slash command that is NOT /imagine,
+    // skip natural-language image detection so commands like
+    // /image-mcp generate_image ... don't get routed through
+    // the image generator.
+    if (!(trimmedInput.startsWith("/") && !IMAGE_COMMAND_REGEX.test(trimmedInput))) {
+      const naturalImagePrompt = extractImagePrompt(input);
+      if (naturalImagePrompt) {
+        await runImageGeneration(naturalImagePrompt);
+        return;
+      }
     }
 
     const ensureAuthForCommand = (command: SlashMcpCommand): boolean => {

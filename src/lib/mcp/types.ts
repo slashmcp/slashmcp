@@ -1,9 +1,7 @@
-export type McpServerId =
-  | "alphavantage-mcp"
-  | "polymarket-mcp"
-  | "grokipedia-mcp"
-  | "canva-mcp"
-  | "playwright-mcp";
+// Known static server ids include values like "alphavantage-mcp" or "playwright-mcp",
+// but at runtime we also support dynamic user-registered servers (e.g. srv_... ids).
+// To keep the client flexible, McpServerId is a plain string type.
+export type McpServerId = string;
 
 export interface McpRegistryEntry {
   id: string;
