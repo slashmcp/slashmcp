@@ -781,6 +781,139 @@ async function handlePolymarket(invocation: McpInvocation): Promise<McpInvocatio
   };
 }
 
+function parseOptionalNumber(value: string | undefined, min?: number, max?: number): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return undefined;
+  if (typeof min === "number" && parsed < min) return min;
+  if (typeof max === "number" && parsed > max) return max;
+  return parsed;
+}
+
+type GeminiCandidate = {
+  content?: {
+    parts?: Array<{
+      text?: string;
+    }>;
+  };
+  finishReason?: string;
+};
+
+type GeminiResponse = {
+  candidates?: GeminiCandidate[];
+  usageMetadata?: Record<string, unknown>;
+};
+
+function extractGeminiText(payload: GeminiResponse): string | null {
+  if (!Array.isArray(payload?.candidates)) return null;
+  for (const candidate of payload.candidates) {
+    const parts = candidate?.content?.parts;
+    if (!Array.isArray(parts)) continue;
+    const text = parts
+      .map(part => (typeof part?.text === "string" ? part.text : ""))
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+    if (text) return text;
+  }
+  return null;
+}
+
+async function handleGemini(invocation: McpInvocation): Promise<McpInvocationResponse> {
+  const startedAt = performance.now();
+  const apiKey = Deno.env.get("GEMINI_API_KEY");
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY is not configured.");
+  }
+
+  const args = invocation.args ?? {};
+  const command = invocation.command ?? "generate_text";
+
+  if (command !== "generate_text") {
+    return {
+      invocation,
+      result: {
+        type: "error",
+        message: `Unsupported Gemini command: ${command}`,
+      },
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  const prompt = args.prompt ?? invocation.positionalArgs?.[0];
+  if (!prompt) {
+    return {
+      invocation,
+      result: {
+        type: "error",
+        message: "Missing required parameter: prompt",
+      },
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  const model = args.model ?? invocation.positionalArgs?.[1] ?? "gemini-1.5-flash";
+  const temperature = parseOptionalNumber(args.temperature, 0, 1);
+  const maxOutputTokens = parseOptionalNumber(args.max_output_tokens, 1, 8192);
+  const systemInstruction = args.system?.trim();
+
+  const url = new URL(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`);
+  url.searchParams.set("key", apiKey);
+
+  const body: Record<string, unknown> = {
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: prompt }],
+      },
+    ],
+  };
+
+  const generationConfig: Record<string, unknown> = {};
+  if (typeof temperature === "number") generationConfig.temperature = temperature;
+  if (typeof maxOutputTokens === "number") generationConfig.maxOutputTokens = Math.round(maxOutputTokens);
+  if (Object.keys(generationConfig).length > 0) {
+    body.generationConfig = generationConfig;
+  }
+  if (systemInstruction) {
+    body.systemInstruction = {
+      role: "system",
+      parts: [{ text: systemInstruction }],
+    };
+  }
+
+  const response = await fetch(url.toString(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini request failed (${response.status}): ${errorText}`);
+  }
+
+  const payload = (await response.json()) as GeminiResponse;
+  const text = extractGeminiText(payload);
+
+  if (!text) {
+    throw new Error("Gemini response did not include any text candidates.");
+  }
+
+  return {
+    invocation,
+    result: {
+      type: "text",
+      content: text,
+    },
+    timestamp: new Date().toISOString(),
+    latencyMs: Math.round(performance.now() - startedAt),
+    raw: payload,
+  };
+}
+
 serve(async req => {
   const origin = req.headers.get("Origin");
   const corsHeaders = getCorsHeaders(origin);
@@ -821,6 +954,13 @@ serve(async req => {
     }
     if (invocation.serverId === "polymarket-mcp") {
       const response = await handlePolymarket(invocation);
+      return new Response(JSON.stringify(response), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (invocation.serverId === "gemini-mcp") {
+      const response = await handleGemini(invocation);
       return new Response(JSON.stringify(response), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -11,7 +11,7 @@ interface ImageGenerationRequest {
   negativePrompt?: string;
   aspectRatio?: string;
   imageCount?: number;
-  provider?: "gemini";
+  provider?: "gemini" | "openai";
 }
 
 type InlineImagePart =
@@ -35,6 +35,9 @@ type InlineImagePart =
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 const GEMINI_API_BASE = Deno.env.get("GEMINI_API_BASE") ?? "https://generativelanguage.googleapis.com/v1beta";
 const GEMINI_IMAGE_MODEL = Deno.env.get("GEMINI_IMAGE_MODEL") ?? "gemini-2.5-flash-image";
+
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+const OPENAI_IMAGE_MODEL = Deno.env.get("OPENAI_IMAGE_MODEL") ?? "gpt-image-1";
 
 function normalizeCount(value: unknown, fallback = 1, min = 1, max = 4): number {
   const parsed = typeof value === "number" ? value : Number(value);
@@ -62,6 +65,14 @@ function extractInlineData(part: InlineImagePart) {
   return { data, mimeType, width, height };
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -70,13 +81,6 @@ serve(async (req) => {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  if (!GEMINI_API_KEY) {
-    return new Response(JSON.stringify({ error: "GEMINI_API_KEY is not configured" }), {
-      status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -94,6 +98,100 @@ serve(async (req) => {
 
     const imageCount = normalizeCount(body.imageCount);
     const aspectRatio = sanitizeAspectRatio(body.aspectRatio);
+
+    const provider: "gemini" | "openai" = body.provider ?? "openai";
+
+    if (provider === "openai") {
+      if (!OPENAI_API_KEY) {
+        return new Response(JSON.stringify({ error: "OPENAI_API_KEY is not configured" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const negative = body.negativePrompt?.trim();
+      const fullPrompt =
+        negative && negative.length > 0
+          ? `${prompt}\n\nAvoid the following details: ${negative}`
+          : prompt;
+
+      const response = await fetch("https://api.openai.com/v1/images/generations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: OPENAI_IMAGE_MODEL,
+          prompt: fullPrompt,
+          n: imageCount,
+          size: aspectRatio === "16:9" ? "1024x576" : aspectRatio === "3:4" ? "768x1024" : "1024x1024",
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("OpenAI image generation error:", response.status, errorText);
+        return new Response(JSON.stringify({ error: "OpenAI request failed", details: errorText }), {
+          status: response.status === 200 ? 500 : response.status,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const data = await response.json();
+      const items = Array.isArray(data?.data) ? data.data : [];
+
+      const images = [];
+      for (let index = 0; index < items.length; index++) {
+        const item = items[index] as { b64_json?: string; url?: string };
+        let base64 = item.b64_json ?? "";
+
+        if (!base64 && item.url && typeof item.url === "string") {
+          try {
+            const imgResponse = await fetch(item.url);
+            if (imgResponse.ok) {
+              const buf = await imgResponse.arrayBuffer();
+              base64 = bytesToBase64(new Uint8Array(buf));
+            }
+          } catch (e) {
+            console.error("Failed to download image from URL", e);
+          }
+        }
+
+        images.push({
+          base64,
+          mimeType: "image/png",
+          width: null,
+          height: null,
+          index,
+        });
+      }
+
+      return new Response(
+        JSON.stringify({
+          provider: "openai",
+          prompt,
+          imageCountRequested: imageCount,
+          aspectRatio,
+          images,
+          safetyRatings: null,
+          finishReasons: null,
+          promptFeedback: null,
+          usageMetadata: null,
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (!GEMINI_API_KEY) {
+      return new Response(JSON.stringify({ error: "GEMINI_API_KEY is not configured" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const contents = [
       {

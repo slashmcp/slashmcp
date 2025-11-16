@@ -135,6 +135,55 @@ export const MCP_SERVER_REGISTRY: McpServerDefinition[] = [
     ],
   },
   {
+    id: "gemini-mcp",
+    label: "Gemini Nano Banana",
+    description: "Lightweight Gemini text generation for rapid ideation and summarization.",
+    category: "llm",
+    install: "manus-mcp-cli install gemini-mcp",
+    environment: ["GEMINI_API_KEY"],
+    commands: [
+      {
+        name: "generate_text",
+        title: "Generate Text",
+        description: "Call Gemini to create or transform text based on a prompt.",
+        parameters: [
+          {
+            name: "prompt",
+            description: "Instruction or content Gemini should respond to.",
+            required: true,
+            example: "\"Brainstorm nano banana use cases\"",
+          },
+          {
+            name: "model",
+            description: "Gemini model identifier to target (defaults to gemini-1.5-flash).",
+            required: false,
+            example: "gemini-1.5-pro",
+          },
+          {
+            name: "system",
+            description: "Optional system message to steer behavior.",
+            required: false,
+            example: "\"You are an enthusiastic foodie.\"",
+          },
+          {
+            name: "temperature",
+            description: "Sampling temperature between 0 and 1 (defaults to service preset).",
+            required: false,
+            example: "0.6",
+          },
+          {
+            name: "max_output_tokens",
+            description: "Maximum tokens to return (capped at 8192).",
+            required: false,
+            example: "1024",
+          },
+        ],
+        example:
+          "/gemini-mcp generate_text prompt=\"Write a playful nano banana product description\" model=gemini-1.5-flash",
+      },
+    ],
+  },
+  {
     id: "playwright-mcp",
     label: "Playwright Automation",
     description: "Headless browser automation for scraping and scripted interactions.",

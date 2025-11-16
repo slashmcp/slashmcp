@@ -24,9 +24,16 @@ const PROVIDER_LABEL: Record<Provider, string> = {
   gemini: "Google Gemini 1.5 Flash",
 };
 
+export const PROVIDER_OPTIONS: Array<{ value: Provider; label: string }> = Object.entries(PROVIDER_LABEL).map(
+  ([value, label]) => ({
+    value: value as Provider,
+    label,
+  }),
+);
+
 type BaseMessage = {
   role: "user" | "assistant";
-  type: "text" | "stock";
+  type: "text" | "stock" | "image";
   content: string;
 };
 
@@ -621,7 +628,7 @@ export function useChat() {
   }, []);
   const [isLoading, setIsLoading] = useState(false);
   const [provider, setProvider] = useState<Provider>("openai");
-  const [, setRegistry] = useState<McpRegistryEntry[]>([]);
+  const [registry, setRegistry] = useState<McpRegistryEntry[]>([]);
   const [loginPrompt, setLoginPrompt] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -770,25 +777,23 @@ export function useChat() {
         if (images.length === 0) {
           appendAssistantText("Gemini did not return any images. Try refining your prompt.");
         } else {
-          setMessages(prev => [
-            ...prev,
-            {
-              role: "assistant",
-              type: "image",
-              content: response.prompt ?? trimmedPrompt,
-              images: images.map(image => ({
-                base64: image.base64,
-                mimeType: image.mimeType,
-                width: image.width ?? null,
-                height: image.height ?? null,
-                index: image.index,
-              })),
-              metadata: {
-                safetyRatings: response.safetyRatings ?? undefined,
-                finishReasons: response.finishReasons ?? undefined,
-              },
+          const imageMessage: ImageMessage = {
+            role: "assistant",
+            type: "image",
+            content: response.prompt ?? trimmedPrompt,
+            images: images.map(image => ({
+              base64: image.base64,
+              mimeType: image.mimeType,
+              width: image.width ?? null,
+              height: image.height ?? null,
+              index: image.index,
+            })),
+            metadata: {
+              safetyRatings: response.safetyRatings ?? undefined,
+              finishReasons: response.finishReasons ?? undefined,
             },
-          ]);
+          };
+          setMessages(prev => [...prev, imageMessage]);
         }
       } catch (error) {
         console.error("Image generation failed", error);
@@ -1374,6 +1379,9 @@ export function useChat() {
     isLoading,
     provider,
     providerLabel: PROVIDER_LABEL[provider],
+    providerOptions: PROVIDER_OPTIONS,
+    setProvider,
+    registry,
     session,
     authReady,
     isAuthLoading,

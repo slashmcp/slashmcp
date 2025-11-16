@@ -159,7 +159,7 @@ export interface GeneratedImage {
 }
 
 export interface ImageGenerationResponse {
-  provider: "gemini";
+  provider: "gemini" | "openai";
   prompt: string;
   imageCountRequested: number;
   aspectRatio?: string;

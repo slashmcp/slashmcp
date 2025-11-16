@@ -655,7 +655,7 @@ export function ChatInput({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       className={cn(
-        "sticky bottom-4 left-1/2 -translate-x-1/2 z-50 mx-auto min-h-12 w-full max-w-2xl transition-all duration-300 ease-out",
+        "sticky bottom-4 z-50 mx-auto min-h-12 w-full max-w-2xl transition-all duration-300 ease-out",
         className
       )}
     >

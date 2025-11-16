@@ -2,18 +2,6 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const allowedOrigins = Deno.env.get("ALLOWED_ORIGINS")?.split(",").map(origin => origin.trim()) ?? ["*"];
 
-type GoogleServiceAccount = {
-  type: string;
-  project_id: string;
-  private_key_id: string;
-  private_key: string;
-  client_email: string;
-  client_id: string;
-};
-
-const GOOGLE_TOKEN_AUDIENCE = "https://oauth2.googleapis.com/token";
-const GOOGLE_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
-
 function getCorsHeaders(origin: string | null): Record<string, string> {
   const isAllowed = !origin || allowedOrigins.includes("*") || allowedOrigins.includes(origin);
   return {
@@ -27,98 +15,30 @@ function getCorsHeaders(origin: string | null): Record<string, string> {
 
 type VoiceRequest = {
   text?: string;
+  /**
+   * Logical voice name from the UI. We map this to an OpenAI voice.
+   */
   voice?: string;
-  languageCode?: string;
-  speakingRate?: number;
-  pitch?: number;
 };
 
-const textEncoder = new TextEncoder();
-
-function base64UrlEncode(input: string | Uint8Array): string {
-  let raw: string;
-  if (typeof input === "string") {
-    raw = base64UrlEncode(textEncoder.encode(input));
-    return raw;
-  }
-
+function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
-  for (let i = 0; i < input.length; i++) {
-    binary += String.fromCharCode(input[i]);
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
   }
-  raw = btoa(binary);
-  return raw.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return btoa(binary);
 }
 
-function pemToArrayBuffer(pem: string): ArrayBuffer {
-  const pemContents = pem.replace(/-----BEGIN [^-]+-----/, "").replace(/-----END [^-]+-----/, "").replace(/\s+/g, "");
-  const binary = atob(pemContents);
-  const buffer = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    buffer[i] = binary.charCodeAt(i);
-  }
-  return buffer.buffer;
-}
+function mapVoiceToOpenAI(voice?: string): string {
+  // Map any existing voice names to OpenAI voices.
+  // For now we keep it simple: default to "alloy" and allow overrides later.
+  if (!voice) return "alloy";
 
-async function getAccessTokenFromServiceAccount(credentials: GoogleServiceAccount): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  const header = {
-    alg: "RS256",
-    typ: "JWT",
-  };
+  const normalized = voice.toLowerCase();
+  if (normalized.includes("female") || normalized.includes("f1")) return "verse";
+  if (normalized.includes("male") || normalized.includes("m1")) return "alloy";
 
-  const payload = {
-    iss: credentials.client_email,
-    scope: GOOGLE_SCOPE,
-    aud: GOOGLE_TOKEN_AUDIENCE,
-    iat: now,
-    exp: now + 3600,
-  };
-
-  const unsigned = `${base64UrlEncode(JSON.stringify(header))}.${base64UrlEncode(JSON.stringify(payload))}`;
-
-  const keyData = pemToArrayBuffer(credentials.private_key);
-  const cryptoKey = await crypto.subtle.importKey(
-    "pkcs8",
-    keyData,
-    {
-      name: "RSASSA-PKCS1-v1_5",
-      hash: "SHA-256",
-    },
-    false,
-    ["sign"],
-  );
-
-  const signature = await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5",
-    cryptoKey,
-    textEncoder.encode(unsigned),
-  );
-
-  const jwt = `${unsigned}.${base64UrlEncode(new Uint8Array(signature))}`;
-
-  const tokenResponse = await fetch(GOOGLE_TOKEN_AUDIENCE, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: jwt,
-    }),
-  });
-
-  if (!tokenResponse.ok) {
-    const errorText = await tokenResponse.text();
-    throw new Error(`Failed to obtain Google access token: ${errorText}`);
-  }
-
-  const tokenJson = await tokenResponse.json();
-  const accessToken = tokenJson?.access_token as string | undefined;
-  if (!accessToken) {
-    throw new Error("Google access token response missing access_token field.");
-  }
-  return accessToken;
+  return "alloy";
 }
 
 serve(async (req) => {
@@ -140,12 +60,9 @@ serve(async (req) => {
   }
 
   try {
-    const apiKey = Deno.env.get("GOOGLE_TTS_API_KEY");
-    const serviceAccountJson = Deno.env.get("GOOGLE_TTS_CREDENTIALS");
-    if (!apiKey) {
-      if (!serviceAccountJson) {
-        throw new Error("GOOGLE_TTS_API_KEY or GOOGLE_TTS_CREDENTIALS must be configured");
-      }
+    const openAiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!openAiKey) {
+      throw new Error("OPENAI_API_KEY is not configured");
     }
 
     const body = (await req.json()) as VoiceRequest;
@@ -158,76 +75,39 @@ serve(async (req) => {
       });
     }
 
-    const voiceName = body.voice ?? "en-US-Studio-Q";
-    const languageCode =
-      body.languageCode ??
-      (voiceName.includes("-") ? voiceName.split("-").slice(0, 2).join("-") : "en-US");
+    const openAiVoice = mapVoiceToOpenAI(body.voice);
 
-    const speakingRate = typeof body.speakingRate === "number" ? body.speakingRate : 1.05;
-    const pitch = typeof body.pitch === "number" ? body.pitch : -1.0;
-
-    const requestBody = JSON.stringify({
-      input: { text },
-      voice: {
-        languageCode,
-        name: voiceName,
-      },
-      audioConfig: {
-        audioEncoding: "MP3",
-        speakingRate,
-        pitch,
-      },
-    });
-
-    let requestUrl = "https://texttospeech.googleapis.com/v1/text:synthesize";
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-
-    if (serviceAccountJson) {
-      const credentials = JSON.parse(serviceAccountJson) as GoogleServiceAccount;
-      const accessToken = await getAccessTokenFromServiceAccount(credentials);
-      headers.Authorization = `Bearer ${accessToken}`;
-    } else {
-      requestUrl += `?key=${apiKey}`;
-    }
-
-    const response = await fetch(requestUrl, {
+    const response = await fetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",
-      headers,
-      body: requestBody,
+      headers: {
+        Authorization: `Bearer ${openAiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini-tts",
+        voice: openAiVoice,
+        input: text,
+        format: "mp3",
+      }),
     });
-
-    const payloadText = await response.text();
 
     if (!response.ok) {
-      console.error("Google TTS error:", response.status, payloadText);
-      return new Response(payloadText || "Google TTS request failed", {
+      const errorText = await response.text();
+      console.error("OpenAI TTS error:", response.status, errorText);
+      return new Response(errorText || "OpenAI TTS request failed", {
         status: response.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    let parsed: Record<string, unknown> = {};
-    try {
-      parsed = JSON.parse(payloadText);
-    } catch (error) {
-      console.error("Failed to parse TTS response", error);
-      parsed = {};
-    }
-
-    const audioContent = typeof parsed.audioContent === "string" ? parsed.audioContent : "";
-    if (!audioContent) {
-      return new Response(JSON.stringify({ error: "No audio content returned from Google TTS." }), {
-        status: 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const audioBuffer = await response.arrayBuffer();
+    const audioBytes = new Uint8Array(audioBuffer);
+    const audioContent = bytesToBase64(audioBytes);
 
     const payload = {
       audioContent,
       audioEncoding: "MP3",
-      voice: voiceName,
+      voice: openAiVoice,
     };
 
     return new Response(JSON.stringify(payload), {
@@ -235,7 +115,7 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("google-tts edge function error:", error);
+    console.error("google-tts (OpenAI-backed) edge function error:", error);
     return new Response(
       JSON.stringify({
         error: error instanceof Error ? error.message : "Unknown error during speech synthesis.",

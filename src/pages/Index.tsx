@@ -1,31 +1,151 @@
 import { ChatMessage } from "@/components/ChatMessage";
 import { ChatInput } from "@/components/ui/chat-input";
 import { useChat } from "@/hooks/useChat";
-import { useEffect, useRef, useCallback } from "react";
-import { Volume2, VolumeX, LogIn, LogOut } from "lucide-react";
+import { useEffect, useRef, useCallback, useMemo } from "react";
+import { Volume2, VolumeX, LogIn, LogOut, ChevronDown } from "lucide-react";
 import { useVoicePlayback } from "@/hooks/useVoicePlayback";
 import { useToast } from "@/components/ui/use-toast";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import type { Provider } from "@/hooks/useChat";
+import type { McpRegistryEntry } from "@/lib/mcp/types";
 
 const Index = () => {
   const {
     messages,
     sendMessage,
     isLoading,
+    provider,
     providerLabel,
+    providerOptions,
     session,
     authReady,
     isAuthLoading,
     signInWithGoogle,
     signOut,
     appendAssistantText,
+    setProvider: setChatProvider,
+    registry,
   } = useChat();
+  const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastSpokenRef = useRef<string>("");
-  const { toast } = useToast();
   const { enabled: voicePlaybackEnabled, toggle: toggleVoicePlayback, speak, stop, isSpeaking } = useVoicePlayback();
+
+  const sortedRegistry = useMemo(
+    () => [...registry].sort((a, b) => a.name.localeCompare(b.name)),
+    [registry],
+  );
+
+  const handleProviderChange = useCallback(
+    (value: string) => {
+      const next = value as Provider;
+      if (next === provider) return;
+      setChatProvider(next);
+      const selected = providerOptions.find(option => option.value === next);
+      const label = selected?.label ?? providerLabel;
+      appendAssistantText(`Switched to ${label}.`);
+    },
+    [appendAssistantText, provider, providerLabel, providerOptions, setChatProvider],
+  );
+
+  const handleSelectMcp = useCallback(
+    async (entry: McpRegistryEntry) => {
+      const snippet = `/${entry.id}:`;
+      let copied = false;
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(snippet);
+          copied = true;
+        } catch {
+          copied = false;
+        }
+      }
+      const description = `Invoke ${entry.name} tools with ${snippet}<tool_name>`;
+      toast({
+        title: copied ? "Command copied" : entry.name,
+        description: copied ? `${description}.` : description,
+      });
+    },
+    [toast],
+  );
+
+  const renderModelMenu = useCallback(
+    (variant: "initial" | "compact") => {
+      const variantClasses =
+        variant === "initial"
+          ? "bg-muted/40 text-foreground/70 text-xs"
+          : "bg-muted/30 text-foreground/60 text-2xs";
+      return (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className={cn(
+                "inline-flex items-center gap-2 rounded-full border border-border/40 px-3 py-1 uppercase tracking-wide transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                variantClasses,
+              )}
+            >
+              <span>Model: {providerLabel}</span>
+              <ChevronDown className="h-3 w-3 opacity-70" aria-hidden="true" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="min-w-[260px]" align="center">
+            <DropdownMenuLabel className="text-xs uppercase tracking-wide text-muted-foreground">
+              LLM Providers
+            </DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={provider} onValueChange={handleProviderChange}>
+              {providerOptions.map(option => (
+                <DropdownMenuRadioItem key={option.value} value={option.value}>
+                  {option.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs uppercase tracking-wide text-muted-foreground">
+              Registered MCPs
+            </DropdownMenuLabel>
+            {sortedRegistry.length === 0 ? (
+              <DropdownMenuItem disabled className="text-muted-foreground">
+                No MCP servers registered
+              </DropdownMenuItem>
+            ) : (
+              sortedRegistry.map(server => (
+                <DropdownMenuItem key={server.id} onSelect={() => void handleSelectMcp(server)}>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "h-2 w-2 rounded-full",
+                        server.is_active ? "bg-emerald-500" : "bg-amber-500",
+                      )}
+                      aria-hidden="true"
+                    />
+                    <span>{server.name}</span>
+                  </div>
+                  <DropdownMenuShortcut className="font-mono text-[0.65rem] uppercase tracking-normal">
+                    {server.id}
+                  </DropdownMenuShortcut>
+                </DropdownMenuItem>
+              ))
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      );
+    },
+    [handleProviderChange, handleSelectMcp, provider, providerLabel, providerOptions, sortedRegistry],
+  );
 
   const userMetadata = (session?.user?.user_metadata ?? {}) as Record<string, unknown>;
   const avatarUrl =
@@ -167,15 +287,11 @@ const Index = () => {
               <p className="text-muted-foreground">
                 MCP-powered AI workspace for document intelligence.
               </p>
-              <span className="inline-flex items-center justify-center rounded-full border border-border/40 bg-muted/40 px-3 py-1 text-xs uppercase tracking-wide text-foreground/70">
-                Model: {providerLabel}
-              </span>
+              {renderModelMenu("initial")}
             </div>
           ) : (
             <div className="flex justify-center">
-              <span className="inline-flex items-center justify-center rounded-full border border-border/40 bg-muted/30 px-3 py-1 text-2xs uppercase tracking-wide text-foreground/60">
-                Model: {providerLabel}
-              </span>
+              {renderModelMenu("compact")}
             </div>
           )}
           {messages.map((message, index) => (

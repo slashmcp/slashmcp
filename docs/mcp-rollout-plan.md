@@ -52,7 +52,16 @@ This document tracks follow-on work for wiring additional Model Context Protocol
 ## 7. Documentation
 
 - [x] Update `README.md` with gateway setup instructions, Google OAuth prerequisites, and slash command examples.
-- [ ] Generate quick reference cheat-sheet sourced from `src/lib/mcp/registry.ts`.
+- [x] Generate quick reference cheat-sheet sourced from `src/lib/mcp/registry.ts` (`docs/mcp-command-cheatsheet.md`).
 - [ ] Record Loom walkthrough showing MCP commands end-to-end.
+  - Loom recording script prepped in `docs/mcp-loom-walkthrough-script.md`; ready for capture.
 - [x] Capture manual end-to-end test notes for `/slashmcp` login, list, add/remove, and natural-language triggers (see `docs/mcp-registry-e2e.md`).
+
+## 8. Gemini Nano Banana (`gemini-mcp`)
+
+- [x] Configure Supabase secret `GEMINI_API_KEY` and gateway environment.
+- [x] Extend `mcp` function with Gemini `generate_text` proxy (model, system, temperature support).
+- [x] Add registry entry plus cheat-sheet docs for command parameters.
+- [ ] Add frontend rich rendering (token usage, finish reason, retry controls).
+- [ ] Create regression test covering `/gemini-mcp generate_text prompt="..."`.
 
