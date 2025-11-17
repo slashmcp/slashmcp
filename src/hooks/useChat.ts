@@ -1306,6 +1306,20 @@ export function useChat() {
       });
 
       if (!response.ok || !response.body) {
+        let errorMessage = "Failed to start stream";
+        try {
+          const errorData = await response.json().catch(() => null);
+          if (errorData?.error) {
+            errorMessage = errorData.error;
+            if (errorData.details) {
+              errorMessage += ` (${errorData.details})`;
+            }
+          }
+        } catch {
+          // If JSON parsing fails, use status text
+          errorMessage = response.statusText || `HTTP ${response.status}`;
+        }
+
         if (response.status === 429) {
           toast({
             title: "Rate limit exceeded",
@@ -1318,9 +1332,20 @@ export function useChat() {
             description: "Please add credits to your workspace.",
             variant: "destructive",
           });
+        } else if (response.status === 500) {
+          toast({
+            title: "Server Error",
+            description: errorMessage,
+            variant: "destructive",
+          });
         } else {
-          throw new Error("Failed to start stream");
+          toast({
+            title: "Connection Error",
+            description: errorMessage,
+            variant: "destructive",
+          });
         }
+        console.error("Chat API error:", response.status, errorMessage);
         setIsLoading(false);
         return;
       }
@@ -1380,9 +1405,10 @@ export function useChat() {
       setIsLoading(false);
     } catch (error) {
       console.error("Chat error:", error);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
       toast({
         title: "Error",
-        description: "Failed to send message. Please try again.",
+        description: errorMessage || "Failed to send message. Please try again.",
         variant: "destructive",
       });
       setMessages(prev => prev.slice(0, -1));

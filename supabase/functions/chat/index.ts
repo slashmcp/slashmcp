@@ -146,9 +146,17 @@ const mcpToolAgent = new Agent({
     "- `alphavantage-mcp` for stock and market data\n" +
     "- `polymarket-mcp` for prediction market odds\n" +
     "- `gemini-mcp` for lightweight text generation\n" +
-    "- `playwright-mcp` for browser automation and Playwright test workflows (navigation, scraping, generating or healing tests)\n" +
-    "For Playwright-related requests such as generating tests, exploring an app, or repairing failing tests, prefer `playwright-mcp` commands like " +
-    "`/playwright-mcp navigate_and_scrape url=... selector=...` or other tools documented by that server. " +
+    "- `playwright-mcp` or `playwright-wrapper` for browser automation, web scraping, and recursive testing\n" +
+    "- `search-mcp` for web search results\n" +
+    "For browser automation, web scraping, or research tasks:\n" +
+    "- Use `playwright-wrapper` (or `srv_...` ID) with commands like `browser_navigate`, `browser_snapshot`, `browser_extract_text`\n" +
+    "- For recursive testing of the app itself, navigate to the app URL, get snapshots, and interact with elements\n" +
+    "- For research, extract text content from pages and analyze it\n" +
+    "When researching websites or testing apps, use browser automation to:\n" +
+    "1. Navigate to the URL with `browser_navigate url=...`\n" +
+    "2. Get page structure with `browser_snapshot url=...`\n" +
+    "3. Extract text with `browser_extract_text url=...` (if available)\n" +
+    "4. Take screenshots with `browser_take_screenshot url=...` if visual analysis is needed\n" +
     "Do not answer questions directly; instead, call the tool and return its results.",
   tools: [mcpProxyTool],
 });
@@ -188,10 +196,6 @@ const orchestratorAgent = new Agent({
   handoffs: [mcpHandoff, finalHandoff],
 });
 
-const defaultRunner = new Runner({
-  model: "gpt-4.1-mini",
-});
-
 serve(async (req) => {
   const origin = req.headers.get("Origin");
   const corsHeaders = getCorsHeaders(origin);
@@ -227,39 +231,72 @@ serve(async (req) => {
         throw new Error("OPENAI_API_KEY is not configured");
       }
 
+      // Create runner with API key for this request
+      const runner = new Runner({
+        model: "gpt-4o-mini",
+        apiKey: apiKey,
+      });
+
       const lastUserMessage = conversation.length
         ? conversation[conversation.length - 1]?.content ?? ""
         : "";
 
       // Run the multi-agent workflow via the OpenAI Agents SDK.
-      const events = await defaultRunner.run(
-        orchestratorAgent,
-        lastUserMessage,
-        {
-          tools: [mcpProxyTool],
-          maxTurns: 15,
-          stream: true,
-        },
-      );
-
       let finalOutput = "";
+      let errorOccurred = false;
+      let errorMessage = "";
 
-      // Collect the final output text from the streaming events.
-      for await (const event of events as AsyncIterable<{ type: string; output?: unknown }>) {
-        if (event.type === "finalOutput" && event.output !== undefined) {
-          if (typeof event.output === "string") {
-            finalOutput = event.output;
-          } else {
-            try {
-              finalOutput = JSON.stringify(event.output);
-            } catch {
-              finalOutput = String(event.output);
+      try {
+        const events = await runner.run(
+          orchestratorAgent,
+          lastUserMessage,
+          {
+            tools: [mcpProxyTool],
+            maxTurns: 15,
+            stream: true,
+          },
+        );
+
+        // Collect the final output text from the streaming events.
+        for await (const event of events as AsyncIterable<{ type: string; output?: unknown; error?: unknown }>) {
+          if (event.type === "error") {
+            errorOccurred = true;
+            errorMessage = event.error instanceof Error ? event.error.message : String(event.error);
+            console.error("Agent runner error:", event.error);
+          } else if (event.type === "finalOutput" && event.output !== undefined) {
+            if (typeof event.output === "string") {
+              finalOutput = event.output;
+            } else {
+              try {
+                finalOutput = JSON.stringify(event.output);
+              } catch {
+                finalOutput = String(event.output);
+              }
             }
           }
         }
+      } catch (runnerError) {
+        errorOccurred = true;
+        errorMessage = runnerError instanceof Error ? runnerError.message : String(runnerError);
+        console.error("Runner execution error:", runnerError);
+      }
+
+      if (errorOccurred) {
+        console.error("Agent execution failed:", errorMessage);
+        return new Response(
+          JSON.stringify({ 
+            error: `Agent execution failed: ${errorMessage}`,
+            details: "Check server logs for more information"
+          }), 
+          {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
       }
 
       if (!finalOutput) {
+        console.warn("No output generated from agent runner");
         finalOutput =
           "I was not able to generate a response. Please try rephrasing your question or asking again in a moment.";
       }
