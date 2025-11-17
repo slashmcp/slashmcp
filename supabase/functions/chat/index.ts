@@ -150,13 +150,18 @@ const mcpToolAgent = new Agent({
     "- `search-mcp` for web search results\n" +
     "\n" +
     "CRITICAL POLYMARKET WORKFLOW:\n" +
-    "If a Polymarket market is not found:\n" +
+    "When handling Polymarket queries:\n" +
     "1. First, try the `polymarket-mcp` command with the provided market ID\n" +
-    "2. If it fails with 'market not found', use `playwright-wrapper` to search Polymarket.com:\n" +
-    "   a. Navigate to Polymarket search: `/playwright-wrapper browser_navigate url=https://polymarket.com/search?q=SEARCH_TERM`\n" +
-    "   b. Get page snapshot: `/playwright-wrapper browser_snapshot`\n" +
-    "   c. Extract market slugs from the results\n" +
-    "   d. Try the `polymarket-mcp` command again with the correct slug\n" +
+    "2. If it fails with 'market not found' or 'was not found', you MUST immediately use browser automation to search:\n" +
+    "   a. Extract search terms from the user's query or the failed market ID (remove dashes/underscores, use spaces)\n" +
+    "   b. Navigate to Polymarket search: `/playwright-wrapper browser_navigate url=https://polymarket.com/search?q=SEARCH_TERMS`\n" +
+    "   c. Wait for page to load: `/playwright-wrapper browser_wait_for time=2`\n" +
+    "   d. Get page snapshot: `/playwright-wrapper browser_snapshot`\n" +
+    "   e. Analyze the snapshot to find market links, slugs, or market cards\n" +
+    "   f. Extract market slugs from the search results (look for URLs like /event/MARKET-SLUG or market cards with slugs)\n" +
+    "   g. If you find matching markets, try the `polymarket-mcp` command again with the correct slug from the search results\n" +
+    "   h. If no markets found, inform the user that no matching markets were found on Polymarket.com\n" +
+    "3. ALWAYS use browser automation when a Polymarket market lookup fails - do not just return the error to the user\n" +
     "\n" +
     "For browser automation, web scraping, or research tasks:\n" +
     "- Use `playwright-wrapper` (or `srv_...` ID) with commands like `browser_navigate`, `browser_snapshot`, `browser_extract_text`\n" +
@@ -168,7 +173,11 @@ const mcpToolAgent = new Agent({
     "3. Extract text with `browser_extract_text url=...` (if available)\n" +
     "4. Take screenshots with `browser_take_screenshot url=...` if visual analysis is needed\n" +
     "\n" +
-    "IMPORTANT: If a Polymarket market lookup fails, automatically use browser automation to search Polymarket.com and find the correct market slug. Then retry the market lookup with the correct slug.\n" +
+    "MANDATORY: If a Polymarket market lookup fails with any 'not found' error, you MUST:\n" +
+    "1. Immediately use browser automation (playwright-wrapper) to search Polymarket.com\n" +
+    "2. Extract market slugs from the search results\n" +
+    "3. Retry the market lookup with the correct slug\n" +
+    "4. Do NOT just return the error - always attempt to find the market via browser search first\n" +
     "Do not answer questions directly; instead, call the tool and return its results.",
   tools: [mcpProxyTool],
 });
