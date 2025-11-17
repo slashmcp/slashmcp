@@ -245,6 +245,7 @@ serve(async (req) => {
       let finalOutput = "";
       let errorOccurred = false;
       let errorMessage = "";
+      const contentParts: string[] = [];
 
       try {
         const events = await runner.run(
@@ -257,28 +258,61 @@ serve(async (req) => {
           },
         );
 
-        // Collect the final output text from the streaming events.
-        for await (const event of events as AsyncIterable<{ type: string; output?: unknown; error?: unknown }>) {
+        // Collect all content from the streaming events.
+        for await (const event of events as AsyncIterable<{ 
+          type: string; 
+          output?: unknown; 
+          error?: unknown;
+          content?: string | unknown;
+          text?: string;
+        }>) {
+          console.log("Event received:", event.type, JSON.stringify(event).slice(0, 200));
+          
           if (event.type === "error") {
             errorOccurred = true;
             errorMessage = event.error instanceof Error ? event.error.message : String(event.error);
             console.error("Agent runner error:", event.error);
-          } else if (event.type === "finalOutput" && event.output !== undefined) {
-            if (typeof event.output === "string") {
-              finalOutput = event.output;
-            } else {
-              try {
-                finalOutput = JSON.stringify(event.output);
-              } catch {
-                finalOutput = String(event.output);
+          } else if (event.type === "finalOutput") {
+            if (event.output !== undefined) {
+              if (typeof event.output === "string") {
+                finalOutput = event.output;
+                contentParts.push(event.output);
+              } else {
+                try {
+                  const outputStr = JSON.stringify(event.output);
+                  finalOutput = outputStr;
+                  contentParts.push(outputStr);
+                } catch {
+                  finalOutput = String(event.output);
+                  contentParts.push(finalOutput);
+                }
               }
             }
+          } else if (event.type === "content" || event.type === "text") {
+            // Collect streaming content
+            const content = event.content || event.text;
+            if (content) {
+              const contentStr = typeof content === "string" ? content : String(content);
+              contentParts.push(contentStr);
+            }
+          } else if (event.type === "newMessage") {
+            // Some SDK versions use newMessage events
+            const message = event as any;
+            if (message.content && typeof message.content === "string") {
+              contentParts.push(message.content);
+            }
           }
+        }
+        
+        // If we collected content parts but no finalOutput, combine them
+        if (!finalOutput && contentParts.length > 0) {
+          finalOutput = contentParts.join("");
         }
       } catch (runnerError) {
         errorOccurred = true;
         errorMessage = runnerError instanceof Error ? runnerError.message : String(runnerError);
         console.error("Runner execution error:", runnerError);
+        console.error("Error stack:", runnerError instanceof Error ? runnerError.stack : "No stack");
       }
 
       if (errorOccurred) {
@@ -295,8 +329,8 @@ serve(async (req) => {
         );
       }
 
-      if (!finalOutput) {
-        console.warn("No output generated from agent runner");
+      if (!finalOutput || finalOutput.trim().length === 0) {
+        console.warn("No output generated from agent runner. Collected parts:", contentParts.length);
         finalOutput =
           "I was not able to generate a response. Please try rephrasing your question or asking again in a moment.";
       }
