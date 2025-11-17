@@ -301,7 +301,7 @@ serve(async (req) => {
                 conversationHistory.length > 1 ? conversationHistory : lastUserMessage,
                 {
                   tools: [mcpProxyTool],
-                  maxTurns: 15,
+                  maxTurns: 20, // Increased to allow for retry workflows (initial attempt + browser search + retry)
                   stream: true,
                 },
               );
@@ -313,7 +313,7 @@ serve(async (req) => {
                 lastUserMessage,
                 {
                   tools: [mcpProxyTool],
-                  maxTurns: 15,
+                  maxTurns: 20, // Increased to allow for retry workflows (initial attempt + browser search + retry)
                   stream: true,
                 },
               );
