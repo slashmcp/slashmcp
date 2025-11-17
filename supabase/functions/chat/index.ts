@@ -149,19 +149,26 @@ const mcpToolAgent = new Agent({
     "- `playwright-mcp` or `playwright-wrapper` for browser automation, web scraping, and recursive testing\n" +
     "- `search-mcp` for web search results\n" +
     "\n" +
-    "CRITICAL POLYMARKET WORKFLOW:\n" +
-    "When handling Polymarket queries:\n" +
-    "1. First, try the `polymarket-mcp` command with the provided market ID\n" +
-    "2. If it fails with 'market not found' or 'was not found', you MUST immediately use browser automation to search:\n" +
-    "   a. Extract search terms from the user's query or the failed market ID (remove dashes/underscores, use spaces)\n" +
-    "   b. Navigate to Polymarket search: `/playwright-wrapper browser_navigate url=https://polymarket.com/search?q=SEARCH_TERMS`\n" +
-    "   c. Wait for page to load: `/playwright-wrapper browser_wait_for time=2`\n" +
-    "   d. Get page snapshot: `/playwright-wrapper browser_snapshot`\n" +
-    "   e. Analyze the snapshot to find market links, slugs, or market cards\n" +
-    "   f. Extract market slugs from the search results (look for URLs like /event/MARKET-SLUG or market cards with slugs)\n" +
-    "   g. If you find matching markets, try the `polymarket-mcp` command again with the correct slug from the search results\n" +
-    "   h. If no markets found, inform the user that no matching markets were found on Polymarket.com\n" +
-    "3. ALWAYS use browser automation when a Polymarket market lookup fails - do not just return the error to the user\n" +
+    "CRITICAL POLYMARKET WORKFLOW - FOLLOW EXACTLY:\n" +
+    "When a user asks about Polymarket markets:\n" +
+    "STEP 1: Try the market lookup first: `/polymarket-mcp get_market_price market_id=GUESSED_SLUG`\n" +
+    "STEP 2: Check the result - if it contains 'not found', 'was not found', or any error about the market:\n" +
+    "   → DO NOT STOP OR RETURN THE ERROR\n" +
+    "   → IMMEDIATELY proceed to STEP 3 (browser search)\n" +
+    "STEP 3: Extract search terms from user query (convert 'eagles-and-lions-tonight' to 'eagles and lions tonight')\n" +
+    "STEP 4: Search Polymarket.com using browser automation:\n" +
+    "   a. Call: `/playwright-wrapper browser_navigate url=https://polymarket.com/search?q=EXTRACTED_SEARCH_TERMS`\n" +
+    "   b. Call: `/playwright-wrapper browser_wait_for time=3`\n" +
+    "   c. Call: `/playwright-wrapper browser_snapshot`\n" +
+    "   d. Analyze the snapshot response - look for market links, event URLs, or market cards\n" +
+    "   e. Extract market slugs from URLs (format: /event/MARKET-SLUG or similar)\n" +
+    "STEP 5: If you found market slugs in the search results:\n" +
+    "   → Call: `/polymarket-mcp get_market_price market_id=EXTRACTED_SLUG`\n" +
+    "   → Return the market data\n" +
+    "STEP 6: If no markets found in search:\n" +
+    "   → Inform user: 'No matching markets found on Polymarket.com for [search terms]'\n" +
+    "\n" +
+    "REMEMBER: When you see 'market not found' in a tool response, you MUST continue to STEP 3-5. Do not stop or return the error.\n" +
     "\n" +
     "For browser automation, web scraping, or research tasks:\n" +
     "- Use `playwright-wrapper` (or `srv_...` ID) with commands like `browser_navigate`, `browser_snapshot`, `browser_extract_text`\n" +
