@@ -245,24 +245,53 @@ serve(async (req) => {
             apiKey: apiKey,
           });
 
+          // Pass conversation history - Agents SDK Runner handles full context
+          // Convert conversation to AgentInputItem format
+          const conversationHistory: AgentInputItem[] = conversation.map((msg) => ({
+            role: msg.role as "user" | "assistant",
+            content: msg.content,
+          }));
+
           const lastUserMessage = conversation.length
             ? conversation[conversation.length - 1]?.content ?? ""
             : "";
 
           const contentParts: string[] = [];
+          console.log("Starting Runner with message:", lastUserMessage.slice(0, 100));
+          console.log("Conversation history length:", conversationHistory.length);
 
           try {
-            const events = await runner.run(
-              orchestratorAgent,
-              lastUserMessage,
-              {
-                tools: [mcpProxyTool],
-                maxTurns: 15,
-                stream: true,
-              },
-            );
+            // Try with conversation history first, fallback to just last message if that fails
+            let events: AsyncIterable<{ type: string; [key: string]: unknown }>;
+            
+            try {
+              // The Runner.run() signature might accept conversation history differently
+              // Try passing it as part of the input
+              events = await runner.run(
+                orchestratorAgent,
+                conversationHistory.length > 1 ? conversationHistory : lastUserMessage,
+                {
+                  tools: [mcpProxyTool],
+                  maxTurns: 15,
+                  stream: true,
+                },
+              );
+            } catch (runError) {
+              console.log("Failed with conversation history, trying with last message only:", runError);
+              // Fallback: try with just the last message
+              events = await runner.run(
+                orchestratorAgent,
+                lastUserMessage,
+                {
+                  tools: [mcpProxyTool],
+                  maxTurns: 15,
+                  stream: true,
+                },
+              );
+            }
 
             // Collect all content from the streaming events.
+            let eventCount = 0;
             for await (const event of events as AsyncIterable<{ 
               type: string; 
               output?: unknown; 
@@ -270,8 +299,13 @@ serve(async (req) => {
               content?: string | unknown;
               text?: string;
               delta?: unknown;
+              textDelta?: unknown;
+              message?: unknown;
+              agentMessage?: unknown;
             }>) {
-              console.log("Event received:", event.type, JSON.stringify(event).slice(0, 200));
+              eventCount++;
+              const eventStr = JSON.stringify(event).slice(0, 300);
+              console.log(`Event #${eventCount} - Type: ${event.type}`, eventStr);
               
               if (event.type === "error") {
                 errorOccurred = true;
@@ -294,23 +328,31 @@ serve(async (req) => {
                     }
                   }
                 }
-              } else if (event.type === "content" || event.type === "text" || event.type === "delta") {
-                // Collect streaming content
-                const content = event.content || event.text || event.delta;
+              } else if (event.type === "content" || event.type === "text" || event.type === "textDelta" || event.type === "delta") {
+                // Collect streaming content from various event types
+                const content = (event as any).content || (event as any).text || (event as any).textDelta || (event as any).delta;
                 if (content) {
                   const contentStr = typeof content === "string" ? content : String(content);
                   if (contentStr.trim()) {
                     contentParts.push(contentStr);
+                    console.log("Collected content chunk:", contentStr.slice(0, 50));
                   }
                 }
-              } else if (event.type === "newMessage" || event.type === "message") {
-                // Some SDK versions use newMessage/message events
+              } else if (event.type === "newMessage" || event.type === "message" || event.type === "agentMessage") {
+                // Some SDK versions use newMessage/message/agentMessage events
                 const message = event as any;
-                if (message.content && typeof message.content === "string") {
-                  contentParts.push(message.content);
+                const messageContent = message.content || message.text || message.message || (message.agentMessage?.content);
+                if (messageContent && typeof messageContent === "string") {
+                  contentParts.push(messageContent);
+                  console.log("Collected message content:", messageContent.slice(0, 50));
                 }
+              } else {
+                // Log all other event types for debugging
+                console.log(`Unhandled event type: ${event.type}`, eventStr);
               }
             }
+            
+            console.log(`Processed ${eventCount} events, collected ${contentParts.length} content parts`);
             
             // If we collected content parts but no finalOutput, combine them
             if (!finalOutput && contentParts.length > 0) {
