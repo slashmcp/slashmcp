@@ -15,6 +15,16 @@ import type { RegisterMcpServerPayload } from "@/lib/mcp/registryClient";
 import { findProviderPreset, MCP_PROVIDER_PRESETS, MCP_PROVIDER_COMMANDS } from "@/lib/mcp/presets";
 import type { McpInvocation, McpInvocationResult, McpRegistryEntry } from "@/lib/mcp/types";
 import { supabaseClient } from "@/lib/supabaseClient";
+import {
+  addApiKey,
+  listApiKeys,
+  getApiKey,
+  updateApiKey,
+  deleteApiKey,
+  getAuditLogs,
+  getStaleKeys,
+  checkApiKey,
+} from "@/lib/keyManager";
 
 export type Provider = "openai" | "anthropic" | "gemini";
 
@@ -119,6 +129,39 @@ ${Object.values(MCP_PROVIDER_PRESETS)
 Provider shortcuts:
 ${MCP_PROVIDER_COMMANDS.join("  ")}`;
 
+const KEY_COMMAND_PREFIX = "/key";
+
+const KEY_COMMAND_HELP = `Key Manager Agent (KMA) - Secure API Key Management
+
+Usage:
+/key add <provider> <name> [type=api_key|mcp_key|oauth_token] [expires=YYYY-MM-DD] [scope=read-only]
+/key list                    - List all your API keys
+/key get <name|keyId>        - Get key details (use with caution - key value will be shown)
+/key check <name|keyId>      - Check key status and permissions
+/key update <keyId> [name=...] [expires=...] [scope=...] [is_active=true|false]
+/key delete <name|keyId>     - Delete a key
+/key audit                   - View audit logs
+/key stale [days=90]         - Find keys not used in last N days
+
+Examples:
+/key add openai my-openai-key type=api_key scope=full-access
+/key add anthropic claude-key type=api_key expires=2025-12-31
+/key list
+/key stale days=60
+/key audit`;
+
+type KeyCommand =
+  | { kind: "help" }
+  | { kind: "add"; provider: string; name: string; options: Record<string, string> }
+  | { kind: "list" }
+  | { kind: "get"; identifier: string }
+  | { kind: "check"; identifier: string }
+  | { kind: "update"; keyId: string; options: Record<string, string> }
+  | { kind: "delete"; identifier: string }
+  | { kind: "audit" }
+  | { kind: "stale"; daysThreshold?: number }
+  | { kind: "error"; message: string };
+
 type SlashMcpCommand =
   | { kind: "help" }
   | { kind: "list" }
@@ -176,6 +219,64 @@ function normalizeAuthType(value: string | undefined, fallback: "none" | "api_ke
   if (normalized === "api_key" || normalized === "apikey") return "api_key";
   if (normalized === "oauth" || normalized === "oauth2") return "oauth";
   return "none";
+}
+
+function parseKeyCommand(rawInput: string): KeyCommand | null {
+  const trimmed = rawInput.trim();
+  if (!trimmed.toLowerCase().startsWith(KEY_COMMAND_PREFIX)) return null;
+
+  const parts = trimmed.split(/\s+/);
+  parts.shift(); // remove /key
+  if (parts.length === 0) {
+    return { kind: "help" };
+  }
+
+  const action = parts.shift()!.toLowerCase();
+  switch (action) {
+    case "help":
+      return { kind: "help" };
+    case "list":
+      return { kind: "list" };
+    case "add": {
+      if (parts.length < 2) {
+        return { kind: "error", message: "Usage: /key add <provider> <name> [options...]" };
+      }
+      const provider = parts.shift()!;
+      const name = parts.shift()!;
+      const options = parseKeyValueOptions(parts);
+      return { kind: "add", provider, name, options };
+    }
+    case "get":
+    case "check": {
+      if (parts.length === 0) {
+        return { kind: "error", message: `Usage: /key ${action} <name|keyId>` };
+      }
+      return { kind: action as "get" | "check", identifier: parts.join(" ") };
+    }
+    case "update": {
+      if (parts.length === 0) {
+        return { kind: "error", message: "Usage: /key update <keyId> [options...]" };
+      }
+      const keyId = parts.shift()!;
+      const options = parseKeyValueOptions(parts);
+      return { kind: "update", keyId, options };
+    }
+    case "delete": {
+      if (parts.length === 0) {
+        return { kind: "error", message: "Usage: /key delete <name|keyId>" };
+      }
+      return { kind: "delete", identifier: parts.join(" ") };
+    }
+    case "audit":
+      return { kind: "audit" };
+    case "stale": {
+      const options = parseKeyValueOptions(parts);
+      const days = options.days ? parseInt(options.days, 10) : undefined;
+      return { kind: "stale", daysThreshold: days || 90 };
+    }
+    default:
+      return { kind: "error", message: `Unknown /key command: ${action}` };
+  }
 }
 
 function parseSlashMcpCommand(rawInput: string): SlashMcpCommand | null {
@@ -870,6 +971,167 @@ export function useChat() {
       return true;
     };
 
+    const handleKeyCommand = async (command: KeyCommand) => {
+      if (command.kind === "help") {
+        appendAssistantText(KEY_COMMAND_HELP);
+        return;
+      }
+      if (command.kind === "error") {
+        appendAssistantText(`❌ ${command.message}`);
+        return;
+      }
+
+      if (!session?.user) {
+        appendAssistantText("⚠️ Please sign in to manage API keys. Use /slashmcp login to sign in.");
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        switch (command.kind) {
+          case "add": {
+            const { provider, name, options } = command;
+            const keyType = (options.type || "api_key") as "api_key" | "mcp_key" | "oauth_token";
+            const keyValue = options.key || options.value || options.secret;
+            
+            if (!keyValue) {
+              appendAssistantText(
+                "⚠️ Key value is required. Use: /key add <provider> <name> key=YOUR_KEY_VALUE\n" +
+                "For security, the key value will not be stored in chat history."
+              );
+              break;
+            }
+
+            const expiresAt = options.expires || options.expires_at || null;
+            const scope = options.scope || null;
+
+            const key = await addApiKey(provider, name, keyType, keyValue, {
+              expiresAt: expiresAt || undefined,
+              scope: scope || undefined,
+              metadata: options.metadata ? JSON.parse(options.metadata) : undefined,
+            });
+
+            appendAssistantText(
+              `✅ Added API key "${key.name}" for ${key.provider} (id: ${key.id})\n` +
+              `Type: ${key.key_type}, Scope: ${key.scope || "not specified"}\n` +
+              (key.expires_at ? `Expires: ${new Date(key.expires_at).toLocaleDateString()}\n` : "") +
+              `\n⚠️ Keep your key secure. It is encrypted and stored securely.`
+            );
+            break;
+          }
+          case "list": {
+            const keys = await listApiKeys();
+            if (keys.length === 0) {
+              appendAssistantText("No API keys stored yet. Use /key add to add one.");
+            } else {
+              const lines = keys.map(key => {
+                const status = key.is_active ? "✅" : "❌";
+                const expires = key.expires_at
+                  ? `, expires: ${new Date(key.expires_at).toLocaleDateString()}`
+                  : "";
+                const lastUsed = key.last_used_at
+                  ? `, last used: ${new Date(key.last_used_at).toLocaleDateString()}`
+                  : ", never used";
+                return `${status} ${key.name} (${key.id}) — ${key.provider}, type: ${key.key_type}${expires}${lastUsed}`;
+              });
+              appendAssistantText(`Your API keys (${keys.length}):\n${lines.join("\n")}`);
+            }
+            break;
+          }
+          case "get": {
+            const key = await getApiKey(command.identifier, true);
+            appendAssistantText(
+              `Key: ${key.name} (${key.id})\n` +
+              `Provider: ${key.provider}\n` +
+              `Type: ${key.key_type}\n` +
+              `Status: ${key.is_active ? "active" : "inactive"}\n` +
+              (key.expires_at ? `Expires: ${new Date(key.expires_at).toLocaleDateString()}\n` : "") +
+              (key.scope ? `Scope: ${key.scope}\n` : "") +
+              (key.last_used_at ? `Last used: ${new Date(key.last_used_at).toLocaleDateString()}\n` : "Never used\n") +
+              `Usage count: ${key.usage_count}\n` +
+              (key.keyValue ? `\n⚠️ Key value: ${key.keyValue.substring(0, 8)}...${key.keyValue.substring(key.keyValue.length - 4)}\n` : "")
+            );
+            break;
+          }
+          case "check": {
+            const key = await checkApiKey(command.identifier);
+            const isExpired = key.expires_at && new Date(key.expires_at) < new Date();
+            appendAssistantText(
+              `Key Status: ${key.name} (${key.id})\n` +
+              `Provider: ${key.provider}\n` +
+              `Active: ${key.is_active ? "Yes" : "No"}\n` +
+              (isExpired ? "⚠️ EXPIRED\n" : "") +
+              (key.expires_at ? `Expires: ${new Date(key.expires_at).toLocaleDateString()}\n` : "No expiration\n") +
+              (key.scope ? `Scope: ${key.scope}\n` : "") +
+              `Last used: ${key.last_used_at ? new Date(key.last_used_at).toLocaleDateString() : "Never"}\n` +
+              `Usage count: ${key.usage_count}`
+            );
+            break;
+          }
+          case "update": {
+            const { keyId, options } = command;
+            const updates: Parameters<typeof updateApiKey>[1] = {};
+            
+            if (options.name) updates.name = options.name;
+            if (options.key || options.value || options.secret) {
+              updates.keyValue = options.key || options.value || options.secret;
+            }
+            if (options.expires || options.expires_at) {
+              updates.expiresAt = options.expires || options.expires_at || null;
+            }
+            if (options.scope) updates.scope = options.scope || null;
+            if (options.is_active !== undefined) {
+              updates.is_active = options.is_active === "true" || options.is_active === "1";
+            }
+
+            const updated = await updateApiKey(keyId, updates);
+            appendAssistantText(`✅ Updated key "${updated.name}" (${updated.id})`);
+            break;
+          }
+          case "delete": {
+            await deleteApiKey(command.identifier);
+            appendAssistantText(`🗑️ Deleted key "${command.identifier}"`);
+            break;
+          }
+          case "audit": {
+            const logs = await getAuditLogs();
+            if (logs.length === 0) {
+              appendAssistantText("No audit logs found.");
+            } else {
+              const lines = logs.slice(0, 20).map(log => {
+                const date = new Date(log.created_at).toLocaleString();
+                return `• ${date} — ${log.action}${log.key_name ? ` (${log.key_name})` : ""}${log.provider ? ` [${log.provider}]` : ""}`;
+              });
+              appendAssistantText(`Recent audit logs (showing ${Math.min(20, logs.length)} of ${logs.length}):\n${lines.join("\n")}`);
+            }
+            break;
+          }
+          case "stale": {
+            const staleKeys = await getStaleKeys(command.daysThreshold);
+            if (staleKeys.length === 0) {
+              appendAssistantText(`No stale keys found (checked last ${command.daysThreshold || 90} days).`);
+            } else {
+              const lines = staleKeys.map(key => {
+                return `• ${key.name} (${key.id}) — ${key.provider}, unused for ${key.days_since_use} days`;
+              });
+              appendAssistantText(
+                `Found ${staleKeys.length} stale key(s) (not used in last ${command.daysThreshold || 90} days):\n${lines.join("\n")}\n\n` +
+                `Consider rotating or deleting these keys for better security.`
+              );
+            }
+            break;
+          }
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("/key command error", error);
+        toast({ title: "Key Manager error", description: message, variant: "destructive" });
+        appendAssistantText(`⚠️ ${message}`);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
     const handleSlashMcpCommand = async (command: SlashMcpCommand) => {
       if (command.kind === "help") {
         appendAssistantText(SLASH_MCP_HELP);
@@ -1020,6 +1282,12 @@ export function useChat() {
         setIsLoading(false);
       }
     };
+
+    const keyCommand = parseKeyCommand(input);
+    if (keyCommand) {
+      await handleKeyCommand(keyCommand);
+      return;
+    }
 
     const providerShortcutCommand = matchProviderShortcut(input);
     if (providerShortcutCommand) {

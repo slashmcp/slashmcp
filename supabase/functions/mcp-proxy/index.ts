@@ -123,6 +123,21 @@ serve(async (req) => {
     downstreamHeaders.set("Content-Type", "application/json");
   }
 
+  // For Supabase Edge Functions, include authentication headers
+  const isSupabaseFunction = gatewayUrl.includes(".supabase.co/functions/v1/");
+  if (isSupabaseFunction) {
+    // Get anon key from request headers (client sends it as 'apikey')
+    const anonKey = req.headers.get("apikey") ?? Deno.env.get("SUPABASE_ANON_KEY");
+    if (anonKey && !downstreamHeaders.has("apikey")) {
+      downstreamHeaders.set("apikey", anonKey);
+    }
+    // Also forward the Authorization header if present (for user-authenticated requests)
+    const authHeader = req.headers.get("Authorization");
+    if (authHeader && !downstreamHeaders.has("Authorization")) {
+      downstreamHeaders.set("Authorization", authHeader);
+    }
+  }
+
   const secret = decodeSecret(server.auth_secret);
   if (secret && server.auth_type !== "none") {
     const authHeaderKey = server.metadata?.authHeaderKey as string | undefined;

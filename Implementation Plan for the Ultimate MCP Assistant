@@ -1,0 +1,54 @@
+# Implementation Plan for the Ultimate MCP Assistant
+
+This document outlines a phased approach to implementing the three strategic pillars—**Security & Trust (KMA)**, **Multi-Agent Orchestration**, and **Transparency & Debugging**—to evolve the `slashmcp` project into the ultimate Model Context Protocol (MCP) assistant.
+
+## Phase 1: Security & Trust (Key Manager Agent - KMA)
+
+The KMA is the highest priority due to its security implications and direct response to the user's request. This phase focuses on building the secure foundation for key management.
+
+| Step | Deliverable | Description | Estimated Effort |
+| :--- | :--- | :--- | :--- |
+| **1.1 Key Vault Setup** | Encrypted Key Storage | Implement secure, at-rest encryption for a new database table dedicated to keys (e.g., using Supabase Vault or encrypted columns). | 1 week |
+| **1.2 KMA Core Logic** | Supabase Edge Function | Develop the core KMA logic as a dedicated Edge Function. This function will handle key decryption/encryption and validation. | 2 weeks |
+| **1.3 Chat Interface Integration** | `/key add` Command | Integrate the KMA with the chat interface. Implement the secure, ephemeral input flow for users to safely submit keys via the `/key add` command. | 1 week |
+| **1.4 Secure Retrieval API** | Internal KMA API | Create an internal, authenticated API endpoint that other services (like the chat runner) must call to retrieve a key. This API must only return a short-lived, single-use token, not the key itself. | 1 week |
+| **1.5 Audit Logging** | `key_audit_log` Table | Implement comprehensive logging for all key management actions (add, delete, retrieve attempt) to ensure non-repudiation. | 1 week |
+
+**Phase 1 Goal:** Fully functional, secure, chat-based key management with auditing capabilities.
+
+## Phase 2: Transparency & Debugging
+
+This phase focuses on improving the user experience and building trust by providing deep visibility into the MCP process.
+
+| Step | Deliverable | Description | Estimated Effort |
+| :--- | :--- | :--- | :--- |
+| **2.1 MCP Event Logger** | Backend Logging Service | Modify the chat runner to capture and structure all raw MCP events (tool calls, resource access, agent reasoning) into a temporary session log. | 2 weeks |
+| **2.2 Dual-Terminal UI** | Frontend Component | Design and implement the **Dual-Terminal Playground** component in the frontend. The left pane remains the chat, and the right pane displays the real-time MCP event log. | 2 weeks |
+| **2.3 Log Filtering and Search** | UI Features | Add basic filtering and search capabilities to the event log (e.g., filter by "Tool Call," "Error," or search for a specific keyword). | 1 week |
+| **2.4 Error Highlighting** | UI/UX Improvement | Automatically highlight and surface critical errors from the MCP event log to the user in a clear, actionable format. | 1 week |
+
+**Phase 2 Goal:** A fully transparent chat interface that allows users to monitor and debug the agent's internal workings.
+
+## Phase 3: Multi-Agent Orchestration
+
+This phase introduces the visual workflow builder, significantly expanding the assistant's capability for complex, multi-step tasks.
+
+| Step | Deliverable | Description | Estimated Effort |
+| :--- | :--- | :--- | :--- |
+| **3.1 Server & Tool Discovery** | Registry UI | Implement the **MCP Server Registry and Health Check** feature. A searchable directory of registered MCP servers and their available tools/resources. | 2 weeks |
+| **3.2 Workflow Data Model** | Database Schema | Define the data model for storing agent workflows (nodes, edges, configuration). | 1 week |
+| **3.3 Visual Builder Core** | Drag-and-Drop Canvas | Implement the core **Visual Agent Workflow Builder** frontend component, allowing users to drag nodes (agents, tools, resources) and connect them. | 4 weeks |
+| **3.4 Workflow Execution Engine** | Backend Orchestrator | Develop a new backend service responsible for interpreting the visual workflow data model and executing the sequence of MCP calls. | 3 weeks |
+| **3.5 Basic Templates** | Starter Workflows | Create 3-5 pre-built, drag-and-drop templates (e.g., "Research & Summarize," "Data Analysis & Charting") to demonstrate capability. | 1 week |
+
+**Phase 3 Goal:** A powerful, visual platform for building and executing complex, multi-agent MCP workflows.
+
+## Summary of Implementation Phases
+
+| Phase | Focus | Key Deliverable | Duration (Approx.) |
+| :--- | :--- | :--- | :--- |
+| **1** | Security & Trust | Key Manager Agent (KMA) | 6 weeks |
+| **2** | Transparency & Debugging | Dual-Terminal Playground | 6 weeks |
+| **3** | Multi-Agent Orchestration | Visual Workflow Builder | 11 weeks |
+
+This phased approach ensures that the most critical security and foundational features are implemented first, followed by enhancements to user experience and, finally, the introduction of advanced orchestration capabilities.

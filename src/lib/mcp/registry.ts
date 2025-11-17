@@ -260,6 +260,90 @@ export const MCP_SERVER_REGISTRY: McpServerDefinition[] = [
       },
     ],
   },
+  {
+    id: "playwright-wrapper",
+    label: "Playwright Browser Automation",
+    description: "Browser automation wrapper for testing and crawling your dev app. Uses JSON gateway format compatible with SlashMCP.",
+    category: "automation",
+    install: "Deployed as Supabase Edge Function",
+    commands: [
+      {
+        name: "browser_navigate",
+        title: "Navigate to URL",
+        description: "Navigate browser to a URL and wait for page load.",
+        parameters: [
+          {
+            name: "url",
+            description: "URL to navigate to (e.g., http://localhost:5173).",
+            required: true,
+            example: "http://localhost:5173",
+          },
+        ],
+        example: "/playwright-wrapper browser_navigate url=http://localhost:5173",
+      },
+      {
+        name: "browser_snapshot",
+        title: "Get Page Snapshot",
+        description: "Capture accessibility snapshot of current page (better than screenshot for automation).",
+        parameters: [],
+        example: "/playwright-wrapper browser_snapshot",
+      },
+      {
+        name: "browser_click",
+        title: "Click Element",
+        description: "Click an element on the page using element description and ref from snapshot.",
+        parameters: [
+          {
+            name: "element",
+            description: "Human-readable element description.",
+            required: true,
+            example: "Sign in button",
+          },
+          {
+            name: "ref",
+            description: "Element reference from page snapshot.",
+            required: true,
+            example: "button#sign-in",
+          },
+        ],
+        example: "/playwright-wrapper browser_click element=\"Sign in button\" ref=button#sign-in",
+      },
+      {
+        name: "browser_extract_text",
+        title: "Extract Page Text",
+        description: "Extract all visible text content from a page (useful for research and content analysis).",
+        parameters: [
+          {
+            name: "url",
+            description: "URL to extract text from.",
+            required: true,
+            example: "https://example.com",
+          },
+        ],
+        example: "/playwright-wrapper browser_extract_text url=https://example.com",
+      },
+      {
+        name: "browser_take_screenshot",
+        title: "Take Screenshot",
+        description: "Capture screenshot of current page or specific element.",
+        parameters: [
+          {
+            name: "filename",
+            description: "Optional filename for screenshot.",
+            required: false,
+            example: "homepage.png",
+          },
+          {
+            name: "fullPage",
+            description: "Capture full scrollable page (true/false).",
+            required: false,
+            example: "true",
+          },
+        ],
+        example: "/playwright-wrapper browser_take_screenshot filename=homepage.png fullPage=true",
+      },
+    ],
+  },
 ];
 
 export function findServerDefinition(serverId: string) {
