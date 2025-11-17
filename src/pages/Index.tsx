@@ -2,7 +2,8 @@ import { ChatMessage } from "@/components/ChatMessage";
 import { ChatInput } from "@/components/ui/chat-input";
 import { useChat } from "@/hooks/useChat";
 import { useEffect, useRef, useCallback, useMemo } from "react";
-import { Volume2, VolumeX, LogIn, LogOut, ChevronDown } from "lucide-react";
+import { Volume2, VolumeX, LogIn, LogOut, ChevronDown, Server, Workflow } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useVoicePlayback } from "@/hooks/useVoicePlayback";
 import { useToast } from "@/components/ui/use-toast";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -254,6 +255,20 @@ const Index = () => {
                   </button>
                 )
               )}
+              <Link
+                to="/registry"
+                className="flex items-center gap-2 rounded-full border border-border/40 bg-muted/40 px-3 py-1 text-xs font-medium text-foreground/80 hover:bg-muted transition-colors"
+              >
+                <Server className="h-4 w-4" />
+                <span>Registry</span>
+              </Link>
+              <Link
+                to="/workflows"
+                className="flex items-center gap-2 rounded-full border border-border/40 bg-muted/40 px-3 py-1 text-xs font-medium text-foreground/80 hover:bg-muted transition-colors"
+              >
+                <Workflow className="h-4 w-4" />
+                <span>Workflows</span>
+              </Link>
               <ThemeToggle />
             </div>
           </div>
@@ -323,13 +338,17 @@ const Index = () => {
             </div>
           </ResizablePanel>
 
-          {/* Resizable Handle */}
-          <ResizableHandle withHandle className="hidden lg:flex" />
+          {/* Resizable Handle - Only show when panel is expanded */}
+          {mcpEvents.length > 0 && (
+            <ResizableHandle withHandle className="hidden lg:flex" />
+          )}
 
-          {/* Right Pane: MCP Event Log */}
-          <ResizablePanel defaultSize={30} minSize={20} maxSize={50} className="hidden lg:block min-w-0">
-            <McpEventLog events={mcpEvents} className="h-full border-l" />
-          </ResizablePanel>
+          {/* Right Pane: MCP Event Log - Collapsible */}
+          {mcpEvents.length > 0 && (
+            <ResizablePanel defaultSize={25} minSize={15} maxSize={40} className="hidden lg:block min-w-0">
+              <McpEventLog events={mcpEvents} className="h-full border-l" />
+            </ResizablePanel>
+          )}
         </ResizablePanelGroup>
       </div>
 

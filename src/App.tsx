@@ -6,6 +6,9 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+import { Registry } from "./pages/Registry";
+import { WorkflowBuilder } from "./pages/WorkflowBuilder";
+import { Workflows } from "./pages/Workflows";
 
 const queryClient = new QueryClient();
 
@@ -18,6 +21,10 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />
+            <Route path="/registry" element={<Registry />} />
+            <Route path="/workflows" element={<Workflows />} />
+            <Route path="/workflows/new" element={<WorkflowBuilder />} />
+            <Route path="/workflows/:id" element={<WorkflowBuilder />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

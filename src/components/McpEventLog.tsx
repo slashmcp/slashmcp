@@ -60,7 +60,7 @@ export function McpEventLog({ events, className }: McpEventLogProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false); // Collapsed by default
 
   // Filter and search events
   const filteredEvents = useMemo(() => {
