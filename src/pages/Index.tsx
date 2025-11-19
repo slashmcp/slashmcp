@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { McpEventLog } from "@/components/McpEventLog";
 import { Footer } from "@/components/Footer";
+import { PageHeader } from "@/components/PageHeader";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import {
   DropdownMenu,
@@ -207,135 +208,124 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <div className="px-4 pt-6">
-        <div className="max-w-[1600px] mx-auto flex flex-col gap-4">
-          {/* Sign-in prompt banner */}
-          {authReady && !session && (
-            <div className="mx-4 mb-4 rounded-lg border border-amber-500/50 bg-amber-500/10 p-4 flex items-start gap-3">
-              <AlertCircle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <h3 className="font-semibold text-foreground mb-1">Sign in required</h3>
-                <p className="text-sm text-muted-foreground mb-3">
-                  Please sign in to use SlashMCP. Sign in with Google to access all features including chat, workflows, and MCP tools.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void signInWithGoogle()}
-                  disabled={isAuthLoading}
-                  className={cn(
-                    "inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors",
-                    isAuthLoading
-                      ? "opacity-60 cursor-not-allowed"
-                      : "hover:bg-primary/90"
-                  )}
-                >
-                  <LogIn className="h-4 w-4" />
-                  <span>{isAuthLoading ? "Connecting..." : "Sign in with Google"}</span>
-                </button>
-              </div>
-            </div>
-          )}
-          <div className="flex items-center justify-between gap-2 px-1 py-1 sm:px-2">
-            {/* Logo - Hide subtitle on mobile */}
-            <div className="flex items-center gap-2 sm:gap-3">
-              <img src="/Untitled design.svg" alt="SlashMCP logo" className="h-8 w-auto sm:h-10" />
-              <div className="leading-tight">
-                <p className="font-semibold text-sm sm:text-base text-foreground">SlashMCP</p>
-                <p className="hidden sm:block text-[0.7rem] uppercase tracking-[0.35em] text-muted-foreground">
-                  MCP-powered AI workspace
-                </p>
-              </div>
-            </div>
-            {/* Navigation - Prioritize avatar, icons only on mobile */}
-            <div className="flex items-center gap-1 sm:gap-2">
-              {authReady && (
-                session ? (
-                  <>
-                    {/* Avatar - Always visible, prioritized */}
-                    <Avatar className="h-8 w-8 sm:h-9 sm:w-9 border border-border/50 shadow-sm flex-shrink-0" title={displayName ?? undefined}>
-                      {avatarUrl ? (
-                        <AvatarImage src={avatarUrl} alt={displayName ?? "Signed in user"} />
-                      ) : (
-                        <AvatarFallback className="text-xs sm:text-sm">{avatarInitial}</AvatarFallback>
-                      )}
-                    </Avatar>
-                    {/* Sign out - Icon only on mobile */}
-                    <button
-                      type="button"
-                      onClick={() => void signOut()}
-                      className="rounded-full border border-border/40 bg-muted/40 p-1.5 sm:px-3 sm:py-1 text-foreground/80 hover:bg-muted transition-colors flex-shrink-0"
-                      title="Sign out"
-                    >
-                      <LogOut className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-                      <span className="hidden sm:inline ml-1 text-xs font-medium">Sign out</span>
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => void signInWithGoogle()}
-                    disabled={isAuthLoading}
-                    className={cn(
-                      "rounded-full border border-primary/40 bg-primary/10 p-1.5 sm:px-3 sm:py-1 text-primary transition-colors flex-shrink-0",
-                      isAuthLoading
-                        ? "opacity-60 cursor-not-allowed"
-                        : "hover:bg-primary/20 hover:text-primary"
-                    )}
-                    title={isAuthLoading ? "Connecting..." : "Sign in with Google"}
-                  >
-                    <LogIn className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-                    <span className="hidden sm:inline ml-1 text-xs font-medium">{isAuthLoading ? "Connecting..." : "Sign in"}</span>
-                  </button>
-                )
-              )}
-              {/* Registry - Icon only on mobile */}
-              <Link
-                to="/registry"
-                className="rounded-full border border-border/40 bg-muted/40 p-1.5 sm:px-3 sm:py-1 text-foreground/80 hover:bg-muted transition-colors flex-shrink-0"
-                title="MCP Registry"
-              >
-                <Server className="h-4 w-4 sm:h-4 sm:w-4" />
-                <span className="hidden sm:inline ml-2 text-xs font-medium">Registry</span>
-              </Link>
-              {/* Workflows - Icon only on mobile */}
-              <Link
-                to="/workflows"
-                className="rounded-full border border-border/40 bg-muted/40 p-1.5 sm:px-3 sm:py-1 text-foreground/80 hover:bg-muted transition-colors flex-shrink-0"
-                title="Workflows"
-              >
-                <Workflow className="h-4 w-4 sm:h-4 sm:w-4" />
-                <span className="hidden sm:inline ml-2 text-xs font-medium">Workflows</span>
-              </Link>
-              {/* Theme toggle - Always icon only */}
-              <ThemeToggle />
-            </div>
-          </div>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      {/* Sign-in prompt banner */}
+      {authReady && !session && (
+        <div className="mx-4 mt-4 mb-0 rounded-lg border border-amber-500/50 bg-amber-500/10 p-4 flex items-start gap-3">
+          <AlertCircle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h3 className="font-semibold text-foreground mb-1">Sign in required</h3>
+            <p className="text-sm text-muted-foreground mb-3">
+              Please sign in to use SlashMCP. Sign in with Google to access all features including chat, workflows, and MCP tools.
+            </p>
             <button
               type="button"
-              onClick={handleToggleVoice}
-              className="flex items-center gap-2 rounded-full border border-border/40 bg-muted/40 px-3 py-1 text-xs font-medium text-foreground/80 hover:bg-muted transition-colors"
+              onClick={() => void signInWithGoogle()}
+              disabled={isAuthLoading}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors",
+                isAuthLoading
+                  ? "opacity-60 cursor-not-allowed"
+                  : "hover:bg-primary/90"
+              )}
             >
-              {voicePlaybackEnabled ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-              <span>Voice replies {voicePlaybackEnabled ? "on" : "off"}</span>
+              <LogIn className="h-4 w-4" />
+              <span>{isAuthLoading ? "Connecting..." : "Sign in with Google"}</span>
             </button>
-            {voicePlaybackEnabled && (
-              <div className="flex items-center gap-2 text-xs text-foreground/60">
-                <span
-                  className={cn(
-                    "h-2 w-2 rounded-full",
-                    isSpeaking ? "bg-primary animate-ping" : "bg-muted-foreground/60",
-                  )}
-                />
-                <span>{isSpeaking ? "Speaking..." : "Ready to speak"}</span>
-              </div>
-            )}
           </div>
         </div>
-      </div>
+      )}
+      
+      {/* Header with logo and navigation */}
+      <PageHeader>
+        {authReady && (
+          session ? (
+            <>
+              {/* Avatar - Always visible, prioritized */}
+              <Avatar className="h-8 w-8 sm:h-9 sm:w-9 border border-border/50 shadow-sm flex-shrink-0" title={displayName ?? undefined}>
+                {avatarUrl ? (
+                  <AvatarImage src={avatarUrl} alt={displayName ?? "Signed in user"} />
+                ) : (
+                  <AvatarFallback className="text-xs sm:text-sm">{avatarInitial}</AvatarFallback>
+                )}
+              </Avatar>
+              {/* Sign out - Icon only on mobile */}
+              <button
+                type="button"
+                onClick={() => void signOut()}
+                className="rounded-full border border-border/40 bg-muted/40 p-1.5 sm:px-3 sm:py-1 text-foreground/80 hover:bg-muted transition-colors flex-shrink-0"
+                title="Sign out"
+              >
+                <LogOut className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+                <span className="hidden sm:inline ml-1 text-xs font-medium">Sign out</span>
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void signInWithGoogle()}
+              disabled={isAuthLoading}
+              className={cn(
+                "rounded-full border border-primary/40 bg-primary/10 p-1.5 sm:px-3 sm:py-1 text-primary transition-colors flex-shrink-0",
+                isAuthLoading
+                  ? "opacity-60 cursor-not-allowed"
+                  : "hover:bg-primary/20 hover:text-primary"
+              )}
+              title={isAuthLoading ? "Connecting..." : "Sign in with Google"}
+            >
+              <LogIn className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+              <span className="hidden sm:inline ml-1 text-xs font-medium">{isAuthLoading ? "Connecting..." : "Sign in"}</span>
+            </button>
+          )
+        )}
+        {/* Registry - Icon only on mobile */}
+        <Link
+          to="/registry"
+          className="rounded-full border border-border/40 bg-muted/40 p-1.5 sm:px-3 sm:py-1 text-foreground/80 hover:bg-muted transition-colors flex-shrink-0"
+          title="MCP Registry"
+        >
+          <Server className="h-4 w-4 sm:h-4 sm:w-4" />
+          <span className="hidden sm:inline ml-2 text-xs font-medium">Registry</span>
+        </Link>
+        {/* Workflows - Icon only on mobile */}
+        <Link
+          to="/workflows"
+          className="rounded-full border border-border/40 bg-muted/40 p-1.5 sm:px-3 sm:py-1 text-foreground/80 hover:bg-muted transition-colors flex-shrink-0"
+          title="Workflows"
+        >
+          <Workflow className="h-4 w-4 sm:h-4 sm:w-4" />
+          <span className="hidden sm:inline ml-2 text-xs font-medium">Workflows</span>
+        </Link>
+      </PageHeader>
+      
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="px-4 pt-6">
+          <div className="max-w-[1600px] mx-auto flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <button
+                type="button"
+                onClick={handleToggleVoice}
+                className="flex items-center gap-2 rounded-full border border-border/40 bg-muted/40 px-3 py-1 text-xs font-medium text-foreground/80 hover:bg-muted transition-colors"
+              >
+                {voicePlaybackEnabled ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                <span>Voice replies {voicePlaybackEnabled ? "on" : "off"}</span>
+              </button>
+              {voicePlaybackEnabled && (
+                <div className="flex items-center gap-2 text-xs text-foreground/60">
+                  <span
+                    className={cn(
+                      "h-2 w-2 rounded-full",
+                      isSpeaking ? "bg-primary animate-ping" : "bg-muted-foreground/60",
+                    )}
+                  />
+                  <span>{isSpeaking ? "Speaking..." : "Ready to speak"}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
 
-      {/* Chat Messages with Dual-Terminal Layout */}
-      <div className="flex-1 overflow-hidden">
+        {/* Chat Messages with Dual-Terminal Layout */}
+        <div className="flex-1 overflow-hidden">
         <ResizablePanelGroup direction="horizontal" className="h-full">
           {/* Left Pane: Chat */}
           <ResizablePanel defaultSize={70} minSize={40} className="min-w-0">
@@ -418,17 +408,18 @@ const Index = () => {
             </ResizablePanel>
           )}
         </ResizablePanelGroup>
-      </div>
+        </div>
 
-      {/* Chat Input */}
-      {authReady && session && (
-        <ChatInput
-          onSubmit={sendMessage}
-          onAssistantMessage={appendAssistantText}
-          disabled={isLoading}
-          className="px-4 pb-4"
-        />
-      )}
+        {/* Chat Input */}
+        {authReady && session && (
+          <ChatInput
+            onSubmit={sendMessage}
+            onAssistantMessage={appendAssistantText}
+            disabled={isLoading}
+            className="px-4 pb-4"
+          />
+        )}
+      </div>
       
       {/* Footer */}
       <Footer />
