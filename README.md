@@ -7,7 +7,7 @@
 
 MCP-powered AI workspace for document intelligence, multi-agent orchestration, and dynamic MCP server management.
 
-**Live Demo:** [slashmcp.vercel.app](https://slashmcp.vercel.app) | **Repository:** [github.com/mcpmessenger/slashmcp](https://github.com/mcpmessenger/slashmcp)
+**Live Demo:** [slashmcp.com](https://slashmcp.com) | **Repository:** [github.com/mcpmessenger/slashmcp](https://github.com/mcpmessenger/slashmcp)
 
 <!-- Trigger Vercel redeploy -->
 
